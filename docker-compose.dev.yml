@@ -1,0 +1,202 @@
+# ============================================================
+# UniERP — Development Docker Compose (Single Container Setup)
+# ============================================================
+# Usage:  docker compose -f docker-compose.dev.yml up -d --build
+# Logs:   docker compose -f docker-compose.dev.yml logs -f dev
+# Shell:  docker exec -it unerp-dev sh
+# Stop:   docker compose -f docker-compose.dev.yml down
+# Reset:  docker compose -f docker-compose.dev.yml down -v  (clears all data)
+# ============================================================
+#
+# Architecture:
+#   - postgres (port 5432)  — PostgreSQL 16
+#   - redis    (port 6379)  — Redis 7
+#   - minio    (port 9000/9001) — S3-compatible storage
+#   - dev      (port 3000 + 3001) — Single Node.js container running
+#     NestJS API + Next.js Web with live-reload via bind mounts
+#
+# Optional (use --profile ai):
+#   - ollama   (port 11434) — Local LLM inference
+# ============================================================
+
+services:
+  # ──────────────────────────────────────────────
+  # PostgreSQL 16
+  # ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: unerp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: unerp_dev
+      POSTGRES_USER: unerp
+      POSTGRES_PASSWORD: unerp_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unerp -d unerp_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────
+  # Redis 7
+  # ──────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: unerp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────
+  # MinIO — S3-compatible file storage
+  # ──────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: unerp-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # Web Console
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────
+  # Dev — Single Node.js container (API + Web)
+  # ──────────────────────────────────────────────
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: unerp-dev
+    restart: unless-stopped
+    working_dir: /app
+    stdin_open: true     # Keep stdin open for interactive debugging
+    tty: true            # Allocate a pseudo-TTY (colored output)
+
+    environment:
+      # ── Runtime ──
+      - NODE_ENV=development
+      - NODE_OPTIONS=--max-old-space-size=6144
+
+      # ── Database ──
+      - DATABASE_URL=postgresql://unerp:unerp_password@postgres:5432/unerp_dev?schema=public
+
+      # ── Redis ──
+      - REDIS_URL=redis://redis:6379
+
+      # ── API ──
+      - API_PORT=3001
+      - API_URL=http://localhost:3001
+
+      # ── Web / Next.js ──
+      - NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
+      - PII_ENCRYPTION_KEY=${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+
+      # ── File Storage (MinIO) ──
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=unerp-uploads
+
+      # ── AI (optional — only used when Ollama profile is active) ──
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2:3b
+
+      # ── Logging ──
+      - LOG_LEVEL=debug
+
+      # ── File Watching (critical for Windows Docker bind mounts) ──
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
+      - TSC_WATCHFILE=UseFsEventsWithFallbackDynamicPolling
+
+    ports:
+      - "3000:3000"    # Next.js Web
+      - "3001:3001"    # NestJS API
+
+    volumes:
+      # Bind-mount the entire monorepo for live-reload.
+      # Any file saved on the host is instantly visible inside the container.
+      - .:/app
+
+      # Named volume for node_modules — prevents Windows↔Linux binary
+      # incompatibility and persists installed deps across restarts.
+      - node_modules:/app/node_modules
+
+      # Isolate apps node_modules from host
+      - /app/apps/api/node_modules
+      - /app/apps/web/node_modules
+
+      # Isolate packages node_modules from host
+      - /app/packages/auth/node_modules
+      - /app/packages/config/node_modules
+      - /app/packages/database/node_modules
+      - /app/packages/framework/node_modules
+      - /app/packages/shared/node_modules
+      - /app/packages/ui/node_modules
+
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────
+  # Ollama — Optional AI inference (use --profile ai)
+  # ──────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: unerp-ollama
+    restart: unless-stopped
+    profiles: ["ai"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ──────────────────────────────────────────────
+# Named Volumes
+# ──────────────────────────────────────────────
+volumes:
+  # Infrastructure data (persistent across restarts)
+  postgres_data:
+  redis_data:
+  minio_data:
+
+  # Node.js dependency caches (persist installed packages)
+  node_modules:
+
+  # Optional
+  ollama_data:
