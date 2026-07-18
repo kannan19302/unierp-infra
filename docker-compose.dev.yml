@@ -99,7 +99,8 @@ services:
       - NODE_OPTIONS=--max-old-space-size=6144
 
       # ── Database ──
-      - DATABASE_URL=postgresql://unerp:unerp_password@postgres:5432/unerp_dev?schema=public
+      - DATABASE_URL=postgresql://unerp_api:unerp_api_password@postgres:5432/unerp_dev?schema=public
+      - DATABASE_OWNER_URL=postgresql://unerp:unerp_password@postgres:5432/unerp_dev?schema=public
 
       # ── Redis ──
       - REDIS_URL=redis://redis:6379
