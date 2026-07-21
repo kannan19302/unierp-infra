@@ -1,0 +1,11 @@
+ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "industry" TEXT;
+ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "installedApps" TEXT[] DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "kernelApps" TEXT[] DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "onboardingComplete" BOOLEAN NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS "AppInstallation" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "appSlug" TEXT NOT NULL, "version" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'INSTALLED', "config" JSONB, "installedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "uninstalledAt" TIMESTAMP(3), "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "AppInstallation_pkey" PRIMARY KEY ("id"));
+CREATE TABLE IF NOT EXISTS "AppSettings" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "appSlug" TEXT NOT NULL, "key" TEXT NOT NULL, "value" JSONB NOT NULL, "scope" TEXT NOT NULL DEFAULT 'TENANT', "roleId" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "AppSettings_pkey" PRIMARY KEY ("id"));
+CREATE INDEX IF NOT EXISTS "AppInstallation_tenantId_idx" ON "AppInstallation"("tenantId");
+CREATE INDEX IF NOT EXISTS "AppInstallation_appSlug_idx" ON "AppInstallation"("appSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "AppInstallation_tenantId_appSlug_key" ON "AppInstallation"("tenantId", "appSlug");
+CREATE INDEX IF NOT EXISTS "AppSettings_tenantId_appSlug_idx" ON "AppSettings"("tenantId", "appSlug");
+CREATE UNIQUE INDEX IF NOT EXISTS "AppSettings_tenantId_appSlug_key_scope_roleId_key" ON "AppSettings"("tenantId", "appSlug", "key", "scope", "roleId");

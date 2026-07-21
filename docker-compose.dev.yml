@@ -136,7 +136,11 @@ services:
       - LOG_LEVEL=debug
 
       # ── File Watching (critical for Windows Docker bind mounts) ──
-      - WATCHPACK_POLLING=true
+      # WATCHPACK_POLLING must be a NUMBER (ms interval), not boolean true —
+      # watchpack's env-var check uses parseInt, so 'true' → NaN → falsy → no
+      # polling, silently falling back to inotify which doesn't fire on Docker
+      # Desktop bind mounts.  1000 = poll every 1 second.
+      - WATCHPACK_POLLING=1000
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=1000
       - TSC_WATCHFILE=UseFsEventsWithFallbackDynamicPolling

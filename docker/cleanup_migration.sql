@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS "AppInstallation" CASCADE;
+DROP TABLE IF EXISTS "AppSettings" CASCADE;
+ALTER TABLE "tenants" DROP COLUMN IF EXISTS "industry", DROP COLUMN IF EXISTS "installedApps", DROP COLUMN IF EXISTS "kernelApps", DROP COLUMN IF EXISTS "onboardingComplete";
