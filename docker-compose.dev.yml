@@ -197,6 +197,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # ──────────────────────────────────────────────
+  # Corporate Marketing Website (Port 3002)
+  # ──────────────────────────────────────────────
+  corporate:
+    image: node:22-alpine
+    container_name: unerp-corporate
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_ERP_APP_URL=http://localhost:3000
+      - NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
+    volumes:
+      - ../unierp-corporate-website:/app
+      - corporate_node_modules:/app/node_modules
+    command: >
+      sh -c "corepack enable && corepack prepare pnpm@9.15.4 --activate && pnpm install --no-frozen-lockfile && pnpm dev"
+
 # ──────────────────────────────────────────────
 # Named Volumes
 # ──────────────────────────────────────────────
@@ -208,6 +228,8 @@ volumes:
 
   # Node.js dependency caches (persist installed packages)
   node_modules:
+  corporate_node_modules:
 
   # Optional
   ollama_data:
+
