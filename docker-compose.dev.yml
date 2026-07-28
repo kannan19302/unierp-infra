@@ -1,9 +1,9 @@
 # ============================================================
-# UniERP — Development Docker Compose (Single Container Setup)
+# UniERP — Development Docker Compose
 # ============================================================
 # Usage:  docker compose -f docker-compose.dev.yml up -d --build
-# Logs:   docker compose -f docker-compose.dev.yml logs -f dev
-# Shell:  docker exec -it unerp-dev sh
+# Logs:   docker compose -f docker-compose.dev.yml logs -f api web
+# Shell:  docker exec -it unerp-api sh   /   docker exec -it unerp-web sh
 # Stop:   docker compose -f docker-compose.dev.yml down
 # Reset:  docker compose -f docker-compose.dev.yml down -v  (clears all data)
 # ============================================================
@@ -12,8 +12,19 @@
 #   - postgres (port 5432)  — PostgreSQL 16
 #   - redis    (port 6379)  — Redis 7
 #   - minio    (port 9000/9001) — S3-compatible storage
-#   - dev      (port 3000 + 3001) — Single Node.js container running
-#     NestJS API + Next.js Web with live-reload via bind mounts
+#   - api      (port 3001) — NestJS API, own container. Runs the one-time
+#     workspace setup (deps/Prisma/shared-package builds/migrations/seed),
+#     then only `nest --watch` — editing API code restarts only this
+#     container.
+#   - web      (port 3000) — Next.js Web, own container. Waits for api's
+#     "shared packages built" marker (shares node_modules/dist via the
+#     same volumes), then only `next dev` — editing web code never
+#     restarts the API. Split into a separate container from api so each
+#     compiles/restarts independently and faster.
+#   - mobile   (host port 8090) — Flutter app built for web and served
+#     statically, for manual UI testing without installing the Flutter SDK
+#     locally (`docker compose -f docker-compose.dev.yml up -d mobile`, then
+#     open http://localhost:8090)
 #
 # Optional (use --profile ai):
 #   - ollama   (port 11434) — Local LLM inference
@@ -81,22 +92,23 @@ services:
       retries: 10
 
   # ──────────────────────────────────────────────
-  # Dev — Single Node.js container (API + Web)
+  # API — NestJS backend, own container
   # ──────────────────────────────────────────────
-  dev:
+  api:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: unerp-dev
+    container_name: unerp-api
     restart: unless-stopped
     working_dir: /app
     stdin_open: true     # Keep stdin open for interactive debugging
     tty: true            # Allocate a pseudo-TTY (colored output)
+    command: /usr/local/bin/docker-entrypoint-api.sh
 
     environment:
       # ── Runtime ──
       - NODE_ENV=development
-      - NODE_OPTIONS=--max-old-space-size=6144
+      - NODE_OPTIONS=--max-old-space-size=4096
 
       # ── Database ──
       - DATABASE_URL=postgresql://unerp_api:unerp_api_password@postgres:5432/unerp_dev?schema=public
@@ -109,8 +121,7 @@ services:
       - API_PORT=3001
       - API_URL=http://localhost:3001
 
-      # ── Web / Next.js ──
-      - NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
+      # ── Web (referenced by API for CORS/links) ──
       - NEXT_PUBLIC_APP_URL=http://localhost:3000
       - NEXTAUTH_URL=http://localhost:3000
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
@@ -120,7 +131,6 @@ services:
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
       - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@unerp.dev}
-      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
 
       # ── File Storage (MinIO) ──
       - S3_ENDPOINT=http://minio:9000
@@ -133,20 +143,15 @@ services:
       - OLLAMA_MODEL=llama3.2:3b
 
       # ── Logging ──
-      - LOG_LEVEL=debug
+      - LOG_LEVEL=info
 
       # ── File Watching (critical for Windows Docker bind mounts) ──
-      # WATCHPACK_POLLING must be a NUMBER (ms interval), not boolean true —
-      # watchpack's env-var check uses parseInt, so 'true' → NaN → falsy → no
-      # polling, silently falling back to inotify which doesn't fire on Docker
-      # Desktop bind mounts.  1000 = poll every 1 second.
       - WATCHPACK_POLLING=1000
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=1000
       - TSC_WATCHFILE=UseFsEventsWithFallbackDynamicPolling
 
     ports:
-      - "3000:3000"    # Next.js Web
       - "3001:3001"    # NestJS API
 
     volumes:
@@ -154,22 +159,24 @@ services:
       # Any file saved on the host is instantly visible inside the container.
       - .:/app
 
-      # Named volume for node_modules — prevents Windows↔Linux binary
-      # incompatibility and persists installed deps across restarts.
+      # Named volume for root node_modules — shared with web (only this
+      # container ever runs `pnpm install`; web just reads the result).
       - node_modules:/app/node_modules
 
-      # Isolate apps node_modules from host
-      - /app/apps/api/node_modules
-      - /app/apps/web/node_modules
+      # Isolate this app's own node_modules from the host.
+      - api_node_modules:/app/apps/api/node_modules
+      # Web's node_modules is written by this container's `pnpm install`
+      # (whole-workspace install) but only read by the web container —
+      # shared so web sees what got installed here.
+      - web_node_modules:/app/apps/web/node_modules
 
-      # Isolate packages node_modules from host
-      - /app/packages/auth/node_modules
-      - /app/packages/config/node_modules
-      - /app/packages/database/node_modules
-      - /app/packages/framework/node_modules
-      - /app/packages/shared/node_modules
-      - /app/packages/ui/node_modules
-
+      # Shared package node_modules/dist — built here, read by both.
+      - packages_auth_node_modules:/app/packages/auth/node_modules
+      - packages_config_node_modules:/app/packages/config/node_modules
+      - packages_database_node_modules:/app/packages/database/node_modules
+      - packages_framework_node_modules:/app/packages/framework/node_modules
+      - packages_shared_node_modules:/app/packages/shared/node_modules
+      - packages_ui_node_modules:/app/packages/ui/node_modules
 
     depends_on:
       postgres:
@@ -178,6 +185,93 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+
+  # ──────────────────────────────────────────────
+  # Web — Next.js frontend, own container
+  # ──────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: unerp-web
+    restart: unless-stopped
+    working_dir: /app
+    stdin_open: true
+    tty: true
+    command: /usr/local/bin/docker-entrypoint-web.sh
+
+    environment:
+      - NODE_ENV=development
+      - NODE_OPTIONS=--max-old-space-size=4096
+      # Increase Next.js dev server timeouts for large monorepo cold starts
+      - NEXT_PRIVATE_SKIP_SIZE_LIMIT_CHECK=1
+
+      # ── Talks to the api container over the compose network ──
+      - API_URL=http://api:3001
+      - NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
+      - PII_ENCRYPTION_KEY=${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+
+      - LOG_LEVEL=debug
+
+      - WATCHPACK_POLLING=1000
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
+
+    ports:
+      - "3000:3000"    # Next.js Web
+
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - web_node_modules:/app/apps/web/node_modules
+      - packages_auth_node_modules:/app/packages/auth/node_modules
+      - packages_config_node_modules:/app/packages/config/node_modules
+      - packages_database_node_modules:/app/packages/database/node_modules
+      - packages_framework_node_modules:/app/packages/framework/node_modules
+      - packages_shared_node_modules:/app/packages/shared/node_modules
+      - packages_ui_node_modules:/app/packages/ui/node_modules
+
+    depends_on:
+      api:
+        condition: service_started
+
+  # ──────────────────────────────────────────────
+  # Mobile — Flutter app built for web and served statically (manual UI testing)
+  # ──────────────────────────────────────────────
+  mobile:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.flutter
+    container_name: unerp-mobile
+    restart: unless-stopped
+    working_dir: /app/apps/mobile
+    stdin_open: true
+    tty: true
+
+    environment:
+      - API_BASE_URL=http://api:3001
+
+    ports:
+      - "8090:8080"    # Flutter web UI (8080 avoided — often taken by local Apache/IIS)
+
+    volumes:
+      # Bind-mount only the Flutter app for live-reload.
+      - ./apps/mobile:/app/apps/mobile
+      # Named volume for Flutter/Dart build artifacts — keeps them off the
+      # Windows host bind mount (avoids the CRLF/symlink perf hit) and
+      # persists across container restarts.
+      - mobile_build:/app/apps/mobile/build
+      - mobile_dart_tool:/app/apps/mobile/.dart_tool
+      # Persist the Flutter SDK's own pub cache across rebuilds.
+      - flutter_pub_cache:/root/.pub-cache
+
+    depends_on:
+      api:
+        condition: service_started
 
   # ──────────────────────────────────────────────
   # Ollama — Optional AI inference (use --profile ai)
@@ -208,7 +302,20 @@ volumes:
 
   # Node.js dependency caches (persist installed packages)
   node_modules:
+  api_node_modules:
+  web_node_modules:
+  packages_auth_node_modules:
+  packages_config_node_modules:
+  packages_database_node_modules:
+  packages_framework_node_modules:
+  packages_shared_node_modules:
+  packages_ui_node_modules:
 
   # Optional
   ollama_data:
+
+  # Flutter mobile build caches
+  mobile_build:
+  mobile_dart_tool:
+  flutter_pub_cache:
 
