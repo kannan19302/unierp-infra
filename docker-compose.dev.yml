@@ -103,7 +103,7 @@ services:
     working_dir: /app
     stdin_open: true     # Keep stdin open for interactive debugging
     tty: true            # Allocate a pseudo-TTY (colored output)
-    command: /usr/local/bin/docker-entrypoint-api.sh
+    command: /app/scripts/docker-entrypoint-api.sh
 
     environment:
       # ── Runtime ──
@@ -198,7 +198,7 @@ services:
     working_dir: /app
     stdin_open: true
     tty: true
-    command: /usr/local/bin/docker-entrypoint-web.sh
+    command: /app/scripts/docker-entrypoint-web.sh
 
     environment:
       - NODE_ENV=development
@@ -234,6 +234,11 @@ services:
       - packages_framework_node_modules:/app/packages/framework/node_modules
       - packages_shared_node_modules:/app/packages/shared/node_modules
       - packages_ui_node_modules:/app/packages/ui/node_modules
+      # Move the Next.js build cache off the slow Windows bind mount.
+      # All webpack artifacts, compiled bundles, and source maps live in a
+      # Docker-managed volume on the Linux ext4 filesystem — dramatically
+      # faster I/O than going through the Windows NTFS/CIFS bridge.
+      - web_next_cache:/app/apps/web/.next
 
     depends_on:
       api:
@@ -310,6 +315,10 @@ volumes:
   packages_framework_node_modules:
   packages_shared_node_modules:
   packages_ui_node_modules:
+
+  # Next.js build cache — kept off the slow Windows bind mount.
+  # Lives on the container's Linux ext4 filesystem for fast I/O.
+  web_next_cache:
 
   # Optional
   ollama_data:
