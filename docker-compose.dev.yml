@@ -108,7 +108,7 @@ services:
     environment:
       # ── Runtime ──
       - NODE_ENV=development
-      - NODE_OPTIONS=--max-old-space-size=4096
+      - NODE_OPTIONS=--max-old-space-size=8192
 
       # ── Database ──
       - DATABASE_URL=postgresql://unerp_api:unerp_api_password@postgres:5432/unerp_dev?schema=public
@@ -124,6 +124,9 @@ services:
       # ── Web (referenced by API for CORS/links) ──
       - NEXT_PUBLIC_APP_URL=http://localhost:3000
       - NEXTAUTH_URL=http://localhost:3000
+      # Temporary: allows the Flutter web dev server (flutter run -d web-server)
+      # to pass CORS during manual mobile-app testing against this API.
+      - APP_URL=http://127.0.0.1:8910
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
       - PII_ENCRYPTION_KEY=${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
 
