@@ -331,3 +331,15 @@ volumes:
   mobile_dart_tool:
   flutter_pub_cache:
 
+
+  pgbouncer:
+    image: edoburu/pgbouncer
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - AUTH_TYPE=any
+    ports:
+      - "6432:6432"
+    depends_on:
+      - postgres
