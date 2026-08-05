@@ -14,7 +14,8 @@ storage: /verdaccio/storage
 auth:
   htpasswd:
     file: /verdaccio/storage/htpasswd
-    max_users: -1
+    # A finite limit ALLOWS registration; -1 is Verdaccio's way of disabling it.
+    max_users: 100
 
 uplinks:
   npmjs:

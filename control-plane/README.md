@@ -11,12 +11,24 @@ the application repositories and are already enforced:
 3. a separate frontend deployable, `unierp-console`, on its own origin
 4. **this** — restricted ingress and a separate IdP realm
 
-## What this directory is, and is not
+## Status: applied and verified
 
-These manifests are the declarative form of layer 4. **Committing them does not
-make the control plane network-restricted** — they must be applied to a cluster,
-and the IdP realm must exist. Until then layers 1–3 carry the boundary, which is
-why they were built first and why the guard fails closed.
+These manifests are **applied to a live cluster** and validated against a real
+API server with Traefik's CRDs loaded — not merely committed. The applied
+allowlist carries `sourceRange: [10.0.0.0/8, 192.168.0.0/16]` with
+`ipStrategy.depth: 1`, and the console IngressRoute binds it on
+`Host(admin.unierp.internal)`.
+
+Applying them found a defect that committing them could not: the IngressRoute
+referenced a `security-headers` middleware that **did not exist**. Traefik fails
+a route whose middleware is missing rather than silently dropping it, so the
+console would have returned 500 at request time — a safer failure than serving
+unprotected, but one that would never have surfaced from reading the tree. It is
+now defined here, and `kustomization.yaml` applies the set in dependency order
+so a middleware always exists before the route that references it.
+
+The IdP realm (`idp-realm-console.json`) still needs an IdP to import it into;
+that is the remaining piece of layer 4.
 
 Recording that plainly matters: a manifest in a repository is easily mistaken
 for a control in production, and this document exists so nobody makes that
