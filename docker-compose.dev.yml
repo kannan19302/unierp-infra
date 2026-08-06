@@ -1,38 +1,63 @@
 # ============================================================
-# UniERP — Development Docker Compose
-# ============================================================
-# Usage:  docker compose -f docker-compose.dev.yml up -d --build
-# Logs:   docker compose -f docker-compose.dev.yml logs -f api web
-# Shell:  docker exec -it unerp-api sh   /   docker exec -it unerp-web sh
-# Stop:   docker compose -f docker-compose.dev.yml down
-# Reset:  docker compose -f docker-compose.dev.yml down -v  (clears all data)
+# UniERP — shared development services (L7 · unierp-infra)
 # ============================================================
 #
-# Architecture:
-#   - postgres (port 5432)  — PostgreSQL 16
-#   - redis    (port 6379)  — Redis 7
-#   - minio    (port 9000/9001) — S3-compatible storage
-#   - api      (port 3001) — NestJS API, own container. Runs the one-time
-#     workspace setup (deps/Prisma/shared-package builds/migrations/seed),
-#     then only `nest --watch` — editing API code restarts only this
-#     container.
-#   - web      (port 3000) — Next.js Web, own container. Waits for api's
-#     "shared packages built" marker (shares node_modules/dist via the
-#     same volumes), then only `next dev` — editing web code never
-#     restarts the API. Split into a separate container from api so each
-#     compiles/restarts independently and faster.
-#   - mobile   (host port 8090) — Flutter app built for web and served
-#     statically, for manual UI testing without installing the Flutter SDK
-#     locally (`docker compose -f docker-compose.dev.yml up -d mobile`, then
-#     open http://localhost:8090)
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml --profile pooling up -d pgbouncer
+#   docker compose -f docker-compose.dev.yml --profile ai      up -d ollama
+#   docker compose -f docker-compose.dev.yml down          (add -v to wipe data)
 #
-# Optional (use --profile ai):
-#   - ollama   (port 11434) — Local LLM inference
+# ── What this file is, and what it deliberately is not ──────────────────────
+#
+# This is the stack of services that **no application repository owns**:
+# PostgreSQL, Redis, MinIO, and the optional pooler and inference server. Every
+# plane in the platform talks to these, so they belong to the layer that owns
+# environment topology (PLATFORM_ARCHITECTURE.md § 4.2, L7) rather than to any
+# one consumer of them.
+#
+# It does **not** define `api`, `web`, `console`, `developer` or `idp`.
+#
+# The previous revision of this file did, and none of them could start: it was a
+# byte-copy of `ERPSys/docker-compose.dev.yml` taken at a point in time, so it
+# built from `Dockerfile.dev` and bind-mounted `./apps` and `./packages` —
+# three paths that have never existed in this repository. `docker compose up`
+# failed on the first service. It also drifted behind its source: the original
+# had grown `console`, `developer` and `idp` services, a `max_connections`
+# increase without which the test suite reports flaky failures, and the
+# profiles that keep a developer machine from running five Next.js servers at
+# once. None of that reached the copy.
+#
+# That is precisely the failure § 1.1 catalogues — six Dockerfiles copy-pasted
+# from `fieldservice`, and the same EXPOSE-port bug fixed three times — and
+# § 4.6 answers it with a rule: no file is ever hand-copied between repos. A
+# subset this repository genuinely owns is not a copy. A duplicate of the
+# application stack is, and it will drift again the same way.
+#
+# ── Where the application containers are built ──────────────────────────────
+#
+# In `ERPSys`, which remains the authoritative build (§ 14 rule 4: the monorepo
+# stays buildable at each extraction tag until its consumers have switched):
+#
+#   pnpm dev              datastores here, apps native — the everyday loop
+#   pnpm dev --docker     everything in containers, for CI parity
+#
+# The extracted L3/L4 repositories (`unierp-api`, `unierp-web`,
+# `unierp-console`, `unierp-developer`, `unierp-idp`) cannot yet build an image
+# on their own: their `package.json` files still carry `workspace:*`
+# specifiers, which resolve to nothing outside the monorepo. Completing § 14
+# Phase 3 step 4 for the application layer is what unblocks per-repo images,
+# and it is blocked in turn on a package registry that CI can reach — the
+# self-hosted Verdaccio in `registry/` answers on localhost only, which is why
+# commit a96069e6 reverted the first cutover attempt.
+#
+# When that lands, application services belong in a separate overlay that pulls
+# published images by digest from the release-train manifest (§ 4.5 M1) — not
+# in this file, and never as a second copy of the dev stack.
 # ============================================================
 
 services:
   # ──────────────────────────────────────────────
-  # PostgreSQL 16
+  # PostgreSQL 16 (+ pgvector, for the local-first AI stack in § 8.4)
   # ──────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
@@ -46,6 +71,19 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # The default max_connections of 100 is not enough for the test suite:
+    # Prisma sizes its pool per client, vitest runs several forks, and each app
+    # has its own client. The symptom is "Can't reach database server" on a
+    # different handful of specs every run, which reads as flaky tests and is
+    # actually the server refusing new connections. PgBouncer in transaction
+    # mode (§ 11, and the `pooling` profile below) is the real answer at scale;
+    # this raises the ceiling so a developer machine is not the constraint.
+    command:
+      - postgres
+      - -c
+      - max_connections=300
+      - -c
+      - shared_buffers=256MB
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U unerp -d unerp_dev"]
       interval: 5s
@@ -53,11 +91,7 @@ services:
       retries: 10
 
   # ──────────────────────────────────────────────
-  # PgBouncer — connection pooling in transaction mode
-  # PLATFORM_ARCHITECTURE.md § 11. Optional locally: start it with
-  # `docker compose -f docker-compose.dev.yml --profile pooling up -d`.
-  # Credentials track the postgres service above; they were previously
-  # postgres/postgres, which authenticates against nothing in this stack.
+  # PgBouncer — transaction-mode pooling (§ 11). Opt in: --profile pooling
   # ──────────────────────────────────────────────
   pgbouncer:
     image: edoburu/pgbouncer
@@ -79,7 +113,7 @@ services:
         condition: service_healthy
 
   # ──────────────────────────────────────────────
-  # Redis 7
+  # Redis 7 — cache, BullMQ queues, rate-limit counters
   # ──────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -96,7 +130,7 @@ services:
       retries: 10
 
   # ──────────────────────────────────────────────
-  # MinIO — S3-compatible file storage
+  # MinIO — S3-compatible object storage
   # ──────────────────────────────────────────────
   minio:
     image: minio/minio:latest
@@ -106,8 +140,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"     # S3 API
-      - "9001:9001"     # Web Console
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web console
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -118,197 +152,7 @@ services:
       retries: 10
 
   # ──────────────────────────────────────────────
-  # API — NestJS backend, own container
-  # ──────────────────────────────────────────────
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    container_name: unerp-api
-    restart: unless-stopped
-    working_dir: /app
-    stdin_open: true     # Keep stdin open for interactive debugging
-    tty: true            # Allocate a pseudo-TTY (colored output)
-    command: /app/scripts/docker-entrypoint-api.sh
-
-    environment:
-      # ── Runtime ──
-      - NODE_ENV=development
-      - NODE_OPTIONS=--max-old-space-size=8192
-
-      # ── Database ──
-      - DATABASE_URL=postgresql://unerp_api:unerp_api_password@postgres:5432/unerp_dev?schema=public
-      - DATABASE_OWNER_URL=postgresql://unerp:unerp_password@postgres:5432/unerp_dev?schema=public
-
-      # ── Redis ──
-      - REDIS_URL=redis://redis:6379
-
-      # ── API ──
-      - API_PORT=3001
-      - API_URL=http://localhost:3001
-
-      # ── Web (referenced by API for CORS/links) ──
-      - NEXT_PUBLIC_APP_URL=http://localhost:3000
-      - NEXTAUTH_URL=http://localhost:3000
-      # Temporary: allows the Flutter web dev server (flutter run -d web-server)
-      # to pass CORS during manual mobile-app testing against this API.
-      - APP_URL=http://127.0.0.1:8910
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
-      - PII_ENCRYPTION_KEY=${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-
-      # ── Web Push (MFA push-approval) ──
-      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
-      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
-      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@unerp.dev}
-
-      # ── File Storage (MinIO) ──
-      - S3_ENDPOINT=http://minio:9000
-      - S3_ACCESS_KEY=minioadmin
-      - S3_SECRET_KEY=minioadmin
-      - S3_BUCKET=unerp-uploads
-
-      # ── AI (optional — only used when Ollama profile is active) ──
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3.2:3b
-
-      # ── Logging ──
-      - LOG_LEVEL=info
-
-      # ── File Watching (critical for Windows Docker bind mounts) ──
-      - WATCHPACK_POLLING=1000
-      - CHOKIDAR_USEPOLLING=true
-      - CHOKIDAR_INTERVAL=1000
-      - TSC_WATCHFILE=UseFsEventsWithFallbackDynamicPolling
-
-    ports:
-      - "3001:3001"    # NestJS API
-
-    volumes:
-      # Bind-mount the entire monorepo for live-reload.
-      # Any file saved on the host is instantly visible inside the container.
-      - .:/app
-
-      # Named volume for root node_modules — shared with web (only this
-      # container ever runs `pnpm install`; web just reads the result).
-      - node_modules:/app/node_modules
-
-      # Isolate this app's own node_modules from the host.
-      - api_node_modules:/app/apps/api/node_modules
-      # Web's node_modules is written by this container's `pnpm install`
-      # (whole-workspace install) but only read by the web container —
-      # shared so web sees what got installed here.
-      - web_node_modules:/app/apps/web/node_modules
-
-      # Shared package node_modules/dist — built here, read by both.
-      - packages_auth_node_modules:/app/packages/auth/node_modules
-      - packages_config_node_modules:/app/packages/config/node_modules
-      - packages_database_node_modules:/app/packages/database/node_modules
-      - packages_framework_node_modules:/app/packages/framework/node_modules
-      - packages_shared_node_modules:/app/packages/shared/node_modules
-      - packages_ui_node_modules:/app/packages/ui/node_modules
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-
-  # ──────────────────────────────────────────────
-  # Web — Next.js frontend, own container
-  # ──────────────────────────────────────────────
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    container_name: unerp-web
-    restart: unless-stopped
-    working_dir: /app
-    stdin_open: true
-    tty: true
-    command: /app/scripts/docker-entrypoint-web.sh
-
-    environment:
-      - NODE_ENV=development
-      - NODE_OPTIONS=--max-old-space-size=4096
-      # Increase Next.js dev server timeouts for large monorepo cold starts
-      - NEXT_PRIVATE_SKIP_SIZE_LIMIT_CHECK=1
-
-      # ── Talks to the api container over the compose network ──
-      - API_URL=http://api:3001
-      - NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
-      - NEXT_PUBLIC_APP_URL=http://localhost:3000
-      - NEXTAUTH_URL=http://localhost:3000
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
-      - PII_ENCRYPTION_KEY=${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
-
-      - LOG_LEVEL=debug
-
-      - WATCHPACK_POLLING=1000
-      - CHOKIDAR_USEPOLLING=true
-      - CHOKIDAR_INTERVAL=1000
-
-    ports:
-      - "3000:3000"    # Next.js Web
-
-    volumes:
-      - .:/app
-      - node_modules:/app/node_modules
-      - web_node_modules:/app/apps/web/node_modules
-      - packages_auth_node_modules:/app/packages/auth/node_modules
-      - packages_config_node_modules:/app/packages/config/node_modules
-      - packages_database_node_modules:/app/packages/database/node_modules
-      - packages_framework_node_modules:/app/packages/framework/node_modules
-      - packages_shared_node_modules:/app/packages/shared/node_modules
-      - packages_ui_node_modules:/app/packages/ui/node_modules
-      # Move the Next.js build cache off the slow Windows bind mount.
-      # All webpack artifacts, compiled bundles, and source maps live in a
-      # Docker-managed volume on the Linux ext4 filesystem — dramatically
-      # faster I/O than going through the Windows NTFS/CIFS bridge.
-      - web_next_cache:/app/apps/web/.next
-
-    depends_on:
-      api:
-        condition: service_started
-
-  # ──────────────────────────────────────────────
-  # Mobile — Flutter app built for web and served statically (manual UI testing)
-  # ──────────────────────────────────────────────
-  mobile:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.flutter
-    container_name: unerp-mobile
-    restart: unless-stopped
-    working_dir: /app/apps/mobile
-    stdin_open: true
-    tty: true
-
-    environment:
-      - API_BASE_URL=http://api:3001
-
-    ports:
-      - "8090:8080"    # Flutter web UI (8080 avoided — often taken by local Apache/IIS)
-
-    volumes:
-      # Bind-mount only the Flutter app for live-reload.
-      - ./apps/mobile:/app/apps/mobile
-      # Named volume for Flutter/Dart build artifacts — keeps them off the
-      # Windows host bind mount (avoids the CRLF/symlink perf hit) and
-      # persists across container restarts.
-      - mobile_build:/app/apps/mobile/build
-      - mobile_dart_tool:/app/apps/mobile/.dart_tool
-      # Persist the Flutter SDK's own pub cache across rebuilds.
-      - flutter_pub_cache:/root/.pub-cache
-
-    depends_on:
-      api:
-        condition: service_started
-
-  # ──────────────────────────────────────────────
-  # Ollama — Optional AI inference (use --profile ai)
+  # Ollama — local-first inference (§ 8.4). Opt in: --profile ai
   # ──────────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
@@ -325,34 +169,8 @@ services:
       timeout: 5s
       retries: 5
 
-# ──────────────────────────────────────────────
-# Named Volumes
-# ──────────────────────────────────────────────
 volumes:
-  # Infrastructure data (persistent across restarts)
   postgres_data:
   redis_data:
   minio_data:
-
-  # Node.js dependency caches (persist installed packages)
-  node_modules:
-  api_node_modules:
-  web_node_modules:
-  packages_auth_node_modules:
-  packages_config_node_modules:
-  packages_database_node_modules:
-  packages_framework_node_modules:
-  packages_shared_node_modules:
-  packages_ui_node_modules:
-
-  # Next.js build cache — kept off the slow Windows bind mount.
-  # Lives on the container's Linux ext4 filesystem for fast I/O.
-  web_next_cache:
-
-  # Optional
   ollama_data:
-
-  # Flutter mobile build caches
-  mobile_build:
-  mobile_dart_tool:
-  flutter_pub_cache:
