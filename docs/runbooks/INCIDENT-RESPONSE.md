@@ -96,3 +96,4 @@ Appended by `scripts/rehearse-alert-routing.mjs` — a synthetic SLO error-budge
 | :--------- | :-- | :------- | :----- | :------------- | :---------- | :----- |
 | 2026-08-08 03:37:57 | slo-login | critical | 90% | 35 ms | http://127.0.0.1:9199/webhook | PASS |
 | 2026-08-08 03:38:27 | slo-post-transaction | critical | 90% | 34 ms | http://127.0.0.1:9199/webhook | PASS |
+| 2026-08-08 04:15:54 | slo-login | critical | 90% | 34 ms | http://127.0.0.1:9199/webhook | PASS |
