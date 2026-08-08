@@ -5,43 +5,23 @@
 #   docker compose -f docker-compose.dev.yml -f docker-compose.platform.yml up -d --build
 #
 # `docker-compose.dev.yml` brings the shared services this repository owns —
-# PostgreSQL, Redis, MinIO. This file adds the applications, and each one is
-# **built from its own repository**, not from a monorepo checkout:
+# PostgreSQL, Redis, MinIO. This file adds the platform applications:
 #
-#   ../unierp-api        L3   the modular monolith
-#   ../unierp-idp        L3   identity, a separate realm per plane (§ 5.2)
-#   ../unierp-web        L4   tenant admin portal + application layer
-#   ../unierp-console    L4   platform admin console  (profile: console)
-#   ../unierp-developer  L4   App Studio and the builders (profile: developer)
-#
-# That is the whole point of § 4.2. Until this file existed the layered
-# architecture was a directory layout: the repositories were `git filter-repo`
-# snapshots that had never been installed or built, every image was assembled
-# from `ERPSys`, and the `Dockerfile`s in the extracted repos referenced
-# `apps/` and `packages/` paths that do not exist there.
-#
-# ── The registry is load-bearing ────────────────────────────────────────────
-#
-# Each build resolves `@kannan19302/*` from `registry/docker-compose.registry.yml`
-# (Verdaccio), which must be running and on this network. Verdaccio builds
-# tarball URLs from the request's Host header, so builds address it as
-# `host.docker.internal:4873` and get URLs pointing back at the host — which is
-# why the build arg and the service name differ. § 14.1's open decision, a
-# registry that CI can reach, is what replaces this.
-#
-# ── Memory ──────────────────────────────────────────────────────────────────
-#
-# `console` and `developer` sit behind profiles. Each is a full Next.js server
-# holding its own module graph, and bringing five up at once exhausted the
-# Docker VM during earlier bring-ups. Start the plane you are working on.
+#   ../unierp-api                L3   the modular monolith (3001)
+#   ../unierp-idp                L3   identity provider (3005)
+#   ../unierp-web                L4   tenant admin portal (3000)
+#   ../unierp-console            L4   platform admin console (3002)
+#   ../unierp-corporate-website  L4   corporate marketing website (3003)
+#   ../unierp-developer          L4   App Studio & builder portal (3004)
+#   ../unierp-mobile             L4   Flutter web mobile client (8080)
+#   ../unierp-storybook          L4   UI design system catalog (6006)
 # ============================================================
 
 x-registry: &registry
-  UNIERP_REGISTRY: http://host.docker.internal:4873/
+  UNIERP_REGISTRY: https://registry.npmjs.org/
 
 x-datastore-env: &datastore-env
   # The app connects as the NOBYPASSRLS role; migrations run as the owner.
-  # § 5.1 layer 4 is only a guarantee if the application cannot bypass it.
   DATABASE_URL: postgresql://unerp_api:unerp_api_password@postgres:5432/unerp_dev?schema=public
   DATABASE_OWNER_URL: postgresql://unerp:unerp_password@postgres:5432/unerp_dev?schema=public
   REDIS_URL: redis://redis:6379
@@ -57,20 +37,10 @@ services:
     build:
       context: ../unierp-api
       args: *registry
-    image: unierp-api:local
     container_name: unerp-api
     restart: unless-stopped
     environment:
       <<: *datastore-env
-      # development, deliberately. The env schema refuses to start in
-      # production without real secrets — EXT_SERVICE_JWT_SECRET, the S3 keys
-      # and the Stripe keys must all be 32+ characters and non-placeholder —
-      # and it is right to. MinIO ships `minioadmin`, so a stack that mounted
-      # production mode here could only satisfy that guard by shipping
-      # 32-character secrets in a committed file, which is the defect this
-      # repository just removed from fourteen `.npmrc`s. A production deploy
-      # supplies real values from a secret store and the guard then enforces
-      # them; this stack says what it is instead of dressing up.
       NODE_ENV: development
       API_PORT: "3001"
       NEXT_PUBLIC_APP_URL: http://localhost:3000
@@ -89,20 +59,10 @@ services:
     build:
       context: ../unierp-idp
       args: *registry
-    image: unierp-idp:local
     container_name: unerp-idp
     restart: unless-stopped
     environment:
       <<: *datastore-env
-      # development, deliberately. The env schema refuses to start in
-      # production without real secrets — EXT_SERVICE_JWT_SECRET, the S3 keys
-      # and the Stripe keys must all be 32+ characters and non-placeholder —
-      # and it is right to. MinIO ships `minioadmin`, so a stack that mounted
-      # production mode here could only satisfy that guard by shipping
-      # 32-character secrets in a committed file, which is the defect this
-      # repository just removed from fourteen `.npmrc`s. A production deploy
-      # supplies real values from a secret store and the guard then enforces
-      # them; this stack says what it is instead of dressing up.
       NODE_ENV: development
       PORT: "3005"
       API_PORT: "3005"
@@ -121,24 +81,12 @@ services:
         <<: *registry
         API_URL: http://api:3001
         IDP_URL: http://idp:3005
-    image: unierp-web:local
     container_name: unerp-web
     restart: unless-stopped
     environment:
-      # development, deliberately. The env schema refuses to start in
-      # production without real secrets — EXT_SERVICE_JWT_SECRET, the S3 keys
-      # and the Stripe keys must all be 32+ characters and non-placeholder —
-      # and it is right to. MinIO ships `minioadmin`, so a stack that mounted
-      # production mode here could only satisfy that guard by shipping
-      # 32-character secrets in a committed file, which is the defect this
-      # repository just removed from fourteen `.npmrc`s. A production deploy
-      # supplies real values from a secret store and the guard then enforces
-      # them; this stack says what it is instead of dressing up.
       NODE_ENV: development
       API_URL: http://api:3001
       IDP_URL: http://idp:3005
-      # Deliberately empty: the browser must call the web origin so the rewrite
-      # can route /api/v1/auth/* to the IdP and everything else to the API.
       NEXT_PUBLIC_API_URL: ""
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
@@ -153,25 +101,14 @@ services:
         condition: service_started
 
   console:
-    profiles: ["console", "full"]
     build:
       context: ../unierp-console
       args:
         <<: *registry
         API_URL: http://api:3001
-    image: unierp-console:local
     container_name: unerp-console
     restart: unless-stopped
     environment:
-      # development, deliberately. The env schema refuses to start in
-      # production without real secrets — EXT_SERVICE_JWT_SECRET, the S3 keys
-      # and the Stripe keys must all be 32+ characters and non-placeholder —
-      # and it is right to. MinIO ships `minioadmin`, so a stack that mounted
-      # production mode here could only satisfy that guard by shipping
-      # 32-character secrets in a committed file, which is the defect this
-      # repository just removed from fourteen `.npmrc`s. A production deploy
-      # supplies real values from a secret store and the guard then enforces
-      # them; this stack says what it is instead of dressing up.
       NODE_ENV: development
       API_URL: http://api:3001
       NEXT_PUBLIC_API_URL: ""
@@ -183,26 +120,36 @@ services:
       api:
         condition: service_started
 
+  marketing:
+    build:
+      context: ../unierp-corporate-website
+    container_name: unerp-marketing
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: "3003"
+      DATABASE_URL: postgresql://unerp:unerp_password@postgres:5432/unerp_marketing?schema=public
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_ERP_APP_URL: http://localhost:3000
+    ports:
+      - "3003:3003"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   developer:
-    profiles: ["developer", "full"]
     build:
       context: ../unierp-developer
       args:
         <<: *registry
         API_URL: http://api:3001
-    image: unierp-developer:local
     container_name: unerp-developer
     restart: unless-stopped
     environment:
-      # development, deliberately. The env schema refuses to start in
-      # production without real secrets — EXT_SERVICE_JWT_SECRET, the S3 keys
-      # and the Stripe keys must all be 32+ characters and non-placeholder —
-      # and it is right to. MinIO ships `minioadmin`, so a stack that mounted
-      # production mode here could only satisfy that guard by shipping
-      # 32-character secrets in a committed file, which is the defect this
-      # repository just removed from fourteen `.npmrc`s. A production deploy
-      # supplies real values from a secret store and the guard then enforces
-      # them; this stack says what it is instead of dressing up.
       NODE_ENV: development
       API_URL: http://api:3001
       NEXT_PUBLIC_API_URL: ""
@@ -213,3 +160,29 @@ services:
     depends_on:
       api:
         condition: service_started
+
+  mobile:
+    build:
+      context: ../unierp-mobile
+      args:
+        API_BASE_URL: http://api:3001
+    container_name: unerp-mobile
+    restart: unless-stopped
+    ports:
+      - "3006:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_started
+
+  storybook:
+    build:
+      context: ../unierp-storybook
+      args: *registry
+    container_name: unerp-storybook
+    restart: unless-stopped
+    ports:
+      - "6006:6006"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
