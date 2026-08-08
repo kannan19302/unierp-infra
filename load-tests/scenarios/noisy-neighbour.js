@@ -4,10 +4,10 @@
 // tenant's p95 within its SLO. Verified under load, not argued."
 //
 // Two free-plan tenants share one host IP:
-//   noisy  (rl-a20-n1@unerp.dev)  — a runaway report load, 8 VUs hammering
+//   noisy  (rl-a20-n1@kannan19302.dev)  — a runaway report load, 8 VUs hammering
 //                                   POST /reporting/engine/query as fast as
 //                                   the API allows (the throttler caps it).
-//   victim (rl-a20-n2@unerp.dev)  — a light, legitimate report user (1 query
+//   victim (rl-a20-n2@kannan19302.dev)  — a light, legitimate report user (1 query
 //                                   per 10s, comfortably inside its OWN free
 //                                   plan's 10/min report budget).
 //
@@ -32,12 +32,12 @@ const API = `${HOST}:3001/api/v1`;
 const IDP = `${HOST}:3005/api/v1`;
 
 const NOISY = {
-  email: __ENV.NOISY_EMAIL || 'rl-a20-n1@unerp.dev',
+  email: __ENV.NOISY_EMAIL || 'rl-a20-n1@kannan19302.dev',
   password: __ENV.NOISY_PASSWORD || 'Passw0rd!x-A20',
   tag: 'noisy',
 };
 const VICTIM = {
-  email: __ENV.VICTIM_EMAIL || 'rl-a20-n2@unerp.dev',
+  email: __ENV.VICTIM_EMAIL || 'rl-a20-n2@kannan19302.dev',
   password: __ENV.VICTIM_PASSWORD || 'Passw0rd!x-A20',
   tag: 'victim',
 };

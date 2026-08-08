@@ -6,8 +6,8 @@
 # named volume, so it survives restarts exactly as Postgres does.
 #
 # § 10 requires "dependency confusion is closed by scope reservation
-# (@unerp, @unierp) and a registry allowlist in every .npmrc" — the scoped
-# blocks below are that reservation: @unerp/* and @unierp/* are served ONLY from
+# (@kannan19302, @unierp) and a registry allowlist in every .npmrc" — the scoped
+# blocks below are that reservation: @kannan19302/* and @unierp/* are served ONLY from
 # here and are never proxied upstream, so a public package published under one
 # of our scopes can never shadow an internal one.
 storage: /verdaccio/storage
@@ -24,7 +24,7 @@ uplinks:
 
 packages:
   # Reserved scopes — never proxied. This is the dependency-confusion defence.
-  '@unerp/*':
+  '@kannan19302/*':
     access: $all
     publish: $authenticated
     unpublish: $authenticated

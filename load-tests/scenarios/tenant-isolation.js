@@ -6,11 +6,11 @@ import { env } from '../helpers/env.js';
 
 const tenants = new SharedArray('tenants', () => {
   return [
-    { slug: 'acme-corp', email: 'admin@unerp.dev', password: 'admin123' },
-    { slug: 'globex', email: 'admin@unerp.dev', password: 'admin123' },
-    { slug: 'initech', email: 'admin@unerp.dev', password: 'admin123' },
-    { slug: 'umbrella', email: 'admin@unerp.dev', password: 'admin123' },
-    { slug: 'wonka', email: 'admin@unerp.dev', password: 'admin123' },
+    { slug: 'acme-corp', email: 'admin@kannan19302.dev', password: 'admin123' },
+    { slug: 'globex', email: 'admin@kannan19302.dev', password: 'admin123' },
+    { slug: 'initech', email: 'admin@kannan19302.dev', password: 'admin123' },
+    { slug: 'umbrella', email: 'admin@kannan19302.dev', password: 'admin123' },
+    { slug: 'wonka', email: 'admin@kannan19302.dev', password: 'admin123' },
   ];
 });
 

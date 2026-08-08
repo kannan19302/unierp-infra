@@ -22,7 +22,7 @@
 #
 # ── The registry is load-bearing ────────────────────────────────────────────
 #
-# Each build resolves `@unerp/*` from `registry/docker-compose.registry.yml`
+# Each build resolves `@kannan19302/*` from `registry/docker-compose.registry.yml`
 # (Verdaccio), which must be running and on this network. Verdaccio builds
 # tarball URLs from the request's Host header, so builds address it as
 # `host.docker.internal:4873` and get URLs pointing back at the host — which is

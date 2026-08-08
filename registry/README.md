@@ -17,7 +17,7 @@ container-local directory — published tarballs must outlive the container.
 
 ## Scope reservation
 
-`@unerp/*` and `@unierp/*` are served only from here and are **never proxied
+`@kannan19302/*` and `@unierp/*` are served only from here and are **never proxied
 upstream**. That is § 10's dependency-confusion defence: a package published
 publicly under one of our scopes cannot shadow an internal one, because the
 registry will not go looking for it.
