@@ -45,3 +45,4 @@ storybook-static/
 
 # Repository-specific
 .env.local
+var/
