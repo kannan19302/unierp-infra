@@ -8,9 +8,7 @@ const DEFAULT_THRESHOLDS = {
   ],
 };
 
-const DEFAULT_SUMMARY_TRENDS = {
-  http_req_duration: ['avg', 'min', 'med', 'max', 'p(50)', 'p(90)', 'p(95)', 'p(99)'],
-};
+const DEFAULT_SUMMARY_TRENDS = ['avg', 'min', 'med', 'max', 'p(50)', 'p(90)', 'p(95)', 'p(99)'];
 
 export function baseOptions(customOpts = {}) {
   return Object.assign({}, {
