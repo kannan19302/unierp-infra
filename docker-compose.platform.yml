@@ -106,18 +106,23 @@ services:
       args:
         <<: *registry
         API_URL: http://api:3001
+        IDP_URL: http://idp:3005
     container_name: unerp-console
     restart: unless-stopped
     environment:
       NODE_ENV: development
       API_URL: http://api:3001
+      IDP_URL: http://idp:3005
       NEXT_PUBLIC_API_URL: ""
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
     ports:
       - "3002:3002"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       api:
+        condition: service_started
+      idp:
         condition: service_started
 
   marketing:
