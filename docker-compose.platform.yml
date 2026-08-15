@@ -32,23 +32,53 @@ x-datastore-env: &datastore-env
   NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
   PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
 
+x-watch-env: &watch-env
+  # Polling is required because these bind mounts cross the Windows→WSL2 9P
+  # bridge, which doesn't propagate native fs change events. A 1s interval
+  # across 7 services stacked up to 355% container CPU and made the Docker
+  # Desktop API itself time out (500s on every `docker ps`). 3s is still
+  # fast enough to read as "instant" in the browser and is far cheaper.
+  # UV_THREADPOOL_SIZE was 128 — each polling stat/readdir call goes through
+  # libuv's thread pool, so 128 threads × 7 services meant ~900 OS threads
+  # contending for the VM's CPUs. 16 is plenty for one dev server's I/O.
+  UV_THREADPOOL_SIZE: "16"
+  CHOKIDAR_USEPOLLING: "true"
+  WATCHPACK_POLLING: "3000"
+  NODE_OPTIONS: "--max-old-space-size=8192"
+
 services:
   api:
     build:
       context: ../unierp-api
+      target: dev
       args: *registry
     container_name: unerp-api
     restart: unless-stopped
+    # 6 GB ceiling — tsc watch for the full NestJS monolith needs ~5 GB at
+    # peak. Without a limit it competes with every other container for the
+    # shared WSL2 heap and causes cascading OOM kills across the stack.
+    mem_limit: 6g
     environment:
-      <<: *datastore-env
+      <<: [*datastore-env, *watch-env]
       NODE_ENV: development
       API_PORT: "3001"
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       NEXTAUTH_URL: http://localhost:3000
+    volumes:
+      - ../unierp-api/src:/app/src
     ports:
       - "3001:3001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      # /health is the NestJS root liveness probe — see health.controller.ts
+      # short start_period is fine: webpack build happens at image-build time,
+      # container boot is just `node dist/main.js` which starts in ~10s.
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,14 +88,17 @@ services:
   idp:
     build:
       context: ../unierp-idp
+      target: dev
       args: *registry
     container_name: unerp-idp
     restart: unless-stopped
     environment:
-      <<: *datastore-env
+      <<: [*datastore-env, *watch-env]
       NODE_ENV: development
       PORT: "3005"
       API_PORT: "3005"
+    volumes:
+      - ../unierp-idp/src:/app/src
     ports:
       - "3005:3005"
     extra_hosts:
@@ -77,6 +110,7 @@ services:
   web:
     build:
       context: ../unierp-web
+      target: dev
       args:
         <<: *registry
         API_URL: http://api:3001
@@ -84,25 +118,37 @@ services:
     container_name: unerp-web
     restart: unless-stopped
     environment:
+      <<: *watch-env
       NODE_ENV: development
       API_URL: http://api:3001
       IDP_URL: http://idp:3005
       NEXT_PUBLIC_API_URL: ""
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
+    volumes:
+      # NOTE: do NOT mount app/ here — Next.js scandir walks every route
+      # directory through the WSL2 9P bridge, which exhausts the libuv
+      # thread pool (ENOMEM: not enough memory, scandir). src/ and
+      # public/ are small and safe to mount. Restart container to pick up
+      # app/ route additions; src/ changes hot-reload instantly.
+      - ../unierp-web/src:/app/src
+      - ../unierp-web/public:/app/public
     ports:
       - "3000:3000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       api:
-        condition: service_started
+        # Wait for the API to pass its healthcheck before Next.js starts
+        # proxying — avoids the cascade of ECONNREFUSED errors on startup.
+        condition: service_healthy
       idp:
         condition: service_started
 
   console:
     build:
       context: ../unierp-console
+      target: dev
       args:
         <<: *registry
         API_URL: http://api:3001
@@ -110,27 +156,34 @@ services:
     container_name: unerp-console
     restart: unless-stopped
     environment:
+      <<: *watch-env
       NODE_ENV: development
       API_URL: http://api:3001
       IDP_URL: http://idp:3005
       NEXT_PUBLIC_API_URL: ""
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
+    volumes:
+      # Same WSL2 scandir issue — only mount src/ for hot reload.
+      # Restart container to pick up new app/ route files.
+      - ../unierp-console/src:/app/src
     ports:
       - "3002:3002"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       idp:
         condition: service_started
 
   marketing:
     build:
       context: ../unierp-corporate-website
+      target: dev
     container_name: unerp-marketing
     restart: unless-stopped
     environment:
+      <<: *watch-env
       NODE_ENV: development
       PORT: "3003"
       DATABASE_URL: postgresql://unerp:unerp_password@postgres:5432/unerp_marketing?schema=public
@@ -138,6 +191,9 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       NEXT_PUBLIC_API_URL: http://localhost:3001
       NEXT_PUBLIC_ERP_APP_URL: http://localhost:3000
+    volumes:
+      - ../unierp-corporate-website/src:/app/src
+      - ../unierp-corporate-website/public:/app/public
     ports:
       - "3003:3003"
     extra_hosts:
@@ -149,15 +205,23 @@ services:
   developer:
     build:
       context: ../unierp-developer
+      target: dev
       args:
         <<: *registry
         API_URL: http://api:3001
     container_name: unerp-developer
     restart: unless-stopped
     environment:
+      <<: *watch-env
       NODE_ENV: development
       API_URL: http://api:3001
       NEXT_PUBLIC_API_URL: ""
+    volumes:
+      # Same WSL2 scandir issue as web/console (see the note there): do not
+      # mount app/ — it was walking every route dir through the 9P bridge
+      # and exhausting the libuv thread pool. Restart the container to pick
+      # up new app/ route files; src/ changes hot-reload instantly.
+      - ../unierp-developer/src:/app/src
     ports:
       - "3004:3004"
     extra_hosts:
@@ -169,10 +233,14 @@ services:
   mobile:
     build:
       context: ../unierp-mobile
+      target: dev
       args:
         API_BASE_URL: http://api:3001
     container_name: unerp-mobile
     restart: unless-stopped
+    volumes:
+      - ../unierp-mobile/lib:/app/lib
+      - ../unierp-mobile/assets:/app/assets
     ports:
       - "3006:8080"
     extra_hosts:
@@ -184,9 +252,16 @@ services:
   storybook:
     build:
       context: ../unierp-storybook
+      target: dev
       args: *registry
     container_name: unerp-storybook
     restart: unless-stopped
+    environment:
+      <<: *watch-env
+      NODE_ENV: development
+    volumes:
+      - ../unierp-storybook/.storybook:/app/.storybook
+      - ../unierp-design-system/src:/unierp-design-system/src
     ports:
       - "6006:6006"
     extra_hosts:
