@@ -61,7 +61,7 @@ services:
   # ──────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: unerp-postgres
+    container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: unerp_dev
@@ -71,13 +71,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # The default max_connections of 100 is not enough for the test suite:
-    # Prisma sizes its pool per client, vitest runs several forks, and each app
-    # has its own client. The symptom is "Can't reach database server" on a
-    # different handful of specs every run, which reads as flaky tests and is
-    # actually the server refusing new connections. PgBouncer in transaction
-    # mode (§ 11, and the `pooling` profile below) is the real answer at scale;
-    # this raises the ceiling so a developer machine is not the constraint.
     command:
       - postgres
       - -c
@@ -95,7 +88,7 @@ services:
   # ──────────────────────────────────────────────
   pgbouncer:
     image: edoburu/pgbouncer
-    container_name: unerp-pgbouncer
+    container_name: pgbouncer
     restart: unless-stopped
     profiles: ["pooling"]
     environment:
@@ -117,7 +110,7 @@ services:
   # ──────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: unerp-redis
+    container_name: redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -134,7 +127,7 @@ services:
   # ──────────────────────────────────────────────
   minio:
     image: minio/minio:latest
-    container_name: unerp-minio
+    container_name: minio
     restart: unless-stopped
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -156,7 +149,7 @@ services:
   # ──────────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
-    container_name: unerp-ollama
+    container_name: ollama
     restart: unless-stopped
     profiles: ["ai"]
     ports:

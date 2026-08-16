@@ -4,24 +4,28 @@
 #
 #   docker compose -f docker-compose.dev.yml -f docker-compose.platform.yml up -d --build
 #
-# `docker-compose.dev.yml` brings the shared services this repository owns —
-# PostgreSQL, Redis, MinIO. This file adds the platform applications:
-#
-#   ../unierp-api                L3   the modular monolith (3001)
-#   ../unierp-idp                L3   identity provider (3005)
-#   ../unierp-web                L4   tenant admin portal (3000)
-#   ../unierp-console            L4   platform admin console (3002)
-#   ../unierp-corporate-website  L4   corporate marketing website (3003)
-#   ../unierp-developer          L4   App Studio & builder portal (3004)
-#   ../unierp-mobile             L4   Flutter web mobile client (8080)
-#   ../unierp-storybook          L4   UI design system catalog (6006)
+# PORT ALLOCATION (10 Platforms + 2 Backend Services + Master SSO Wizard)
+# ────────────────────────────────────────────────────────────────────────
+# 4000  ../infra/platform-wizard  Master SSO Wizard & Gateway
+# 4001  ../marketing-site         L4   P1 — Marketing Site
+# 4002  ../provider-admin-os      L4   P2 — Provider Admin OS (🔒 Internal Only)
+# 4003  ../tenant-apps            L4   P3 — Tenant Applications / ERP
+# 4004  ../tenant-sites           L4   P4 — Tenant Websites
+# 4005  ../web-studio             L4   P5 — Web Studio
+# 4006  ../tenant-admin           L4   P6 — Tenant Admin Console
+# 4007  ../marketplace            L4   P7 — Marketplace
+# 4008  ../developer-platform     L4   P8 — Developer Platform
+# 4009  ../unierp-mobile          L5   P9 — Mobile App (Flutter Web)
+# 4010  ../desktop-app            L5   P10 — Desktop App (Web Client Preview)
+# 3001  ../api                    L3   API Monolith Backend
+# 3005  ../idp                    L3   Identity Provider / SSO
+# 6006  ../storybook              Support Design System Catalog
 # ============================================================
 
 x-registry: &registry
   UNIERP_REGISTRY: https://registry.npmjs.org/
 
 x-datastore-env: &datastore-env
-  # The app connects as the NOBYPASSRLS role; migrations run as the owner.
   DATABASE_URL: postgresql://unerp_api:unerp_api_password@postgres:5432/unerp_dev?schema=public
   DATABASE_OWNER_URL: postgresql://unerp:unerp_password@postgres:5432/unerp_dev?schema=public
   REDIS_URL: redis://redis:6379
@@ -33,47 +37,76 @@ x-datastore-env: &datastore-env
   PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
 
 x-watch-env: &watch-env
-  # Polling is required because these bind mounts cross the Windows→WSL2 9P
-  # bridge, which doesn't propagate native fs change events. A 1s interval
-  # across 7 services stacked up to 355% container CPU and made the Docker
-  # Desktop API itself time out (500s on every `docker ps`). 3s is still
-  # fast enough to read as "instant" in the browser and is far cheaper.
-  # UV_THREADPOOL_SIZE was 128 — each polling stat/readdir call goes through
-  # libuv's thread pool, so 128 threads × 7 services meant ~900 OS threads
-  # contending for the VM's CPUs. 16 is plenty for one dev server's I/O.
   UV_THREADPOOL_SIZE: "16"
   CHOKIDAR_USEPOLLING: "true"
   WATCHPACK_POLLING: "3000"
   NODE_OPTIONS: "--max-old-space-size=8192"
 
+x-frontend-env: &frontend-env
+  <<: *watch-env
+  NODE_ENV: development
+  API_URL: http://api:3001
+  IDP_URL: http://idp:3005
+  NEXT_PUBLIC_API_URL: ""
+  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
+
 services:
+  # ════════════════════════════════════════════════════════════════════════
+  # GATEWAY & MASTER SSO PORTAL (port 4000)
+  # ════════════════════════════════════════════════════════════════════════
+
+  platform-wizard:
+    build:
+      context: ./platform-wizard
+      target: dev
+    container_name: platform-wizard
+    restart: unless-stopped
+    profiles: ["wizard", "core", "customer", "l4", "l5", "full"]
+    mem_limit: 512m
+    environment:
+      PORT: "4000"
+      HOST: "0.0.0.0"
+      NODE_ENV: development
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./platform-wizard/public:/app/public
+      - ./platform-wizard/server.mjs:/app/server.mjs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/api/auth/session').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # ════════════════════════════════════════════════════════════════════════
+  # BACKEND SERVICES (L3)
+  # ════════════════════════════════════════════════════════════════════════
+
   api:
     build:
-      context: ../unierp-api
+      context: ../api
       target: dev
       args: *registry
-    container_name: unerp-api
+    container_name: api
     restart: unless-stopped
-    # 6 GB ceiling — tsc watch for the full NestJS monolith needs ~5 GB at
-    # peak. Without a limit it competes with every other container for the
-    # shared WSL2 heap and causes cascading OOM kills across the stack.
-    mem_limit: 6g
+    profiles: ["core", "customer", "l4", "l5", "full"]
+    mem_limit: 4g
     environment:
       <<: [*datastore-env, *watch-env]
       NODE_ENV: development
       API_PORT: "3001"
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
-      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:4003
+      NEXTAUTH_URL: http://localhost:4003
     volumes:
-      - ../unierp-api/src:/app/src
+      - ../api/src:/app/src
     ports:
       - "3001:3001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      # /health is the NestJS root liveness probe — see health.controller.ts
-      # short start_period is fine: webpack build happens at image-build time,
-      # container boot is just `node dist/main.js` which starts in ~10s.
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
       timeout: 5s
@@ -87,18 +120,20 @@ services:
 
   idp:
     build:
-      context: ../unierp-idp
+      context: ../idp
       target: dev
       args: *registry
-    container_name: unerp-idp
+    container_name: idp
     restart: unless-stopped
+    profiles: ["core", "customer", "l4", "l5", "full"]
+    mem_limit: 2g
     environment:
       <<: [*datastore-env, *watch-env]
       NODE_ENV: development
       PORT: "3005"
       API_PORT: "3005"
     volumes:
-      - ../unierp-idp/src:/app/src
+      - ../idp/src:/app/src
     ports:
       - "3005:3005"
     extra_hosts:
@@ -107,161 +142,329 @@ services:
       postgres:
         condition: service_healthy
 
-  web:
-    build:
-      context: ../unierp-web
-      target: dev
-      args:
-        <<: *registry
-        API_URL: http://api:3001
-        IDP_URL: http://idp:3005
-    container_name: unerp-web
-    restart: unless-stopped
-    environment:
-      <<: *watch-env
-      NODE_ENV: development
-      API_URL: http://api:3001
-      IDP_URL: http://idp:3005
-      NEXT_PUBLIC_API_URL: ""
-      NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
-    volumes:
-      # NOTE: do NOT mount app/ here — Next.js scandir walks every route
-      # directory through the WSL2 9P bridge, which exhausts the libuv
-      # thread pool (ENOMEM: not enough memory, scandir). src/ and
-      # public/ are small and safe to mount. Restart container to pick up
-      # app/ route additions; src/ changes hot-reload instantly.
-      - ../unierp-web/src:/app/src
-      - ../unierp-web/public:/app/public
-    ports:
-      - "3000:3000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      api:
-        # Wait for the API to pass its healthcheck before Next.js starts
-        # proxying — avoids the cascade of ECONNREFUSED errors on startup.
-        condition: service_healthy
-      idp:
-        condition: service_started
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 1 — Marketing Site (port 4001)
+  # ════════════════════════════════════════════════════════════════════════
 
-  console:
+  marketing-site:
     build:
-      context: ../unierp-console
+      context: ../marketing-site
       target: dev
-      args:
-        <<: *registry
-        API_URL: http://api:3001
-        IDP_URL: http://idp:3005
-    container_name: unerp-console
+    container_name: marketing-site
     restart: unless-stopped
+    profiles: ["l4", "full"]
+    mem_limit: 1500m
     environment:
       <<: *watch-env
       NODE_ENV: development
-      API_URL: http://api:3001
-      IDP_URL: http://idp:3005
-      NEXT_PUBLIC_API_URL: ""
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
-    volumes:
-      # Same WSL2 scandir issue — only mount src/ for hot reload.
-      # Restart container to pick up new app/ route files.
-      - ../unierp-console/src:/app/src
-    ports:
-      - "3002:3002"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      api:
-        condition: service_healthy
-      idp:
-        condition: service_started
-
-  marketing:
-    build:
-      context: ../unierp-corporate-website
-      target: dev
-    container_name: unerp-marketing
-    restart: unless-stopped
-    environment:
-      <<: *watch-env
-      NODE_ENV: development
-      PORT: "3003"
+      PORT: "4001"
       DATABASE_URL: postgresql://unerp:unerp_password@postgres:5432/unerp_marketing?schema=public
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       NEXT_PUBLIC_API_URL: http://localhost:3001
-      NEXT_PUBLIC_ERP_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_ERP_APP_URL: http://localhost:4003
     volumes:
-      - ../unierp-corporate-website/src:/app/src
-      - ../unierp-corporate-website/public:/app/public
+      - ../marketing-site/src:/app/src
+      - ../marketing-site/public:/app/public
     ports:
-      - "3003:3003"
+      - "4001:4001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
 
-  developer:
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 2 — Provider Admin OS (port 4002) — 🔒 Internal Only
+  # ════════════════════════════════════════════════════════════════════════
+
+  provider-admin-os:
     build:
-      context: ../unierp-developer
+      context: ../provider-admin-os
       target: dev
       args:
         <<: *registry
         API_URL: http://api:3001
-    container_name: unerp-developer
+        IDP_URL: http://idp:3005
+    container_name: provider-admin-os
     restart: unless-stopped
+    profiles: ["core", "l4", "full"]
+    mem_limit: 2g
     environment:
-      <<: *watch-env
-      NODE_ENV: development
-      API_URL: http://api:3001
-      NEXT_PUBLIC_API_URL: ""
+      <<: *frontend-env
     volumes:
-      # Same WSL2 scandir issue as web/console (see the note there): do not
-      # mount app/ — it was walking every route dir through the 9P bridge
-      # and exhausting the libuv thread pool. Restart the container to pick
-      # up new app/ route files; src/ changes hot-reload instantly.
-      - ../unierp-developer/src:/app/src
+      - ../provider-admin-os/app:/app/app
+      - ../provider-admin-os/src:/app/src
+      - ../provider-admin-os/public:/app/public
     ports:
-      - "3004:3004"
+      - "4002:4002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      idp:
+        condition: service_started
+
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 3 — Tenant Applications / ERP (port 4003)
+  # ════════════════════════════════════════════════════════════════════════
+
+  tenant-apps:
+    build:
+      context: ../tenant-apps
+      target: dev
+      args:
+        <<: *registry
+        API_URL: http://api:3001
+        IDP_URL: http://idp:3005
+    container_name: tenant-apps
+    restart: unless-stopped
+    profiles: ["core", "customer", "l4", "full"]
+    mem_limit: 3g
+    environment:
+      <<: *frontend-env
+      NEXTAUTH_URL: http://localhost:4003
+    volumes:
+      - ../tenant-apps/src:/app/src
+      - ../tenant-apps/public:/app/public
+    ports:
+      - "4003:4003"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      idp:
+        condition: service_started
+
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 4 — Tenant Websites (port 4004)
+  # ════════════════════════════════════════════════════════════════════════
+
+  tenant-sites:
+    build:
+      context: ../tenant-sites
+      target: dev
+      args:
+        <<: *registry
+        API_URL: http://api:3001
+        IDP_URL: http://idp:3005
+    container_name: tenant-sites
+    restart: unless-stopped
+    profiles: ["customer", "l4", "full"]
+    mem_limit: 1500m
+    environment:
+      <<: *frontend-env
+    volumes:
+      - ../tenant-sites/app:/app/app
+      - ../tenant-sites/src:/app/src
+      - ../tenant-sites/public:/app/public
+    ports:
+      - "4004:4004"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      idp:
+        condition: service_started
+
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 5 — Web Studio (port 4005)
+  # ════════════════════════════════════════════════════════════════════════
+
+  web-studio:
+    build:
+      context: ../web-studio
+      target: dev
+      args:
+        <<: *registry
+        API_URL: http://api:3001
+        IDP_URL: http://idp:3005
+    container_name: web-studio
+    restart: unless-stopped
+    profiles: ["customer", "l4", "full"]
+    mem_limit: 2g
+    environment:
+      <<: *frontend-env
+    volumes:
+      - ../web-studio/app:/app/app
+      - ../web-studio/src:/app/src
+      - ../web-studio/public:/app/public
+    ports:
+      - "4005:4005"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      idp:
+        condition: service_started
+
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 6 — Tenant Admin Console (port 4006)
+  # ════════════════════════════════════════════════════════════════════════
+
+  tenant-admin:
+    build:
+      context: ../tenant-admin
+      target: dev
+      args:
+        <<: *registry
+        API_URL: http://api:3001
+        IDP_URL: http://idp:3005
+    container_name: tenant-admin
+    restart: unless-stopped
+    profiles: ["core", "customer", "l4", "full"]
+    mem_limit: 2g
+    environment:
+      <<: *frontend-env
+    volumes:
+      - ../tenant-admin/app:/app/app
+      - ../tenant-admin/src:/app/src
+      - ../tenant-admin/public:/app/public
+    ports:
+      - "4006:4006"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      idp:
+        condition: service_started
+
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 7 — Marketplace (port 4007)
+  # ════════════════════════════════════════════════════════════════════════
+
+  marketplace:
+    build:
+      context: ../marketplace
+      target: dev
+      args:
+        <<: *registry
+        API_URL: http://api:3001
+        IDP_URL: http://idp:3005
+    container_name: marketplace
+    restart: unless-stopped
+    profiles: ["customer", "l4", "full"]
+    mem_limit: 1500m
+    environment:
+      <<: *frontend-env
+    volumes:
+      - ../marketplace/app:/app/app
+      - ../marketplace/src:/app/src
+      - ../marketplace/public:/app/public
+    ports:
+      - "4007:4007"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      idp:
+        condition: service_started
+
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 8 — Developer Platform (port 4008)
+  # ════════════════════════════════════════════════════════════════════════
+
+  developer-platform:
+    build:
+      context: ../developer-platform
+      target: dev
+      args:
+        <<: *registry
+        API_URL: http://api:3001
+    container_name: developer-platform
+    restart: unless-stopped
+    profiles: ["l4", "full"]
+    mem_limit: 2g
+    environment:
+      <<: *frontend-env
+    volumes:
+      - ../developer-platform/src:/app/src
+      - ../developer-platform/public:/app/public
+    ports:
+      - "4008:4008"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_started
 
-  mobile:
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 9 — Mobile App (port 4009)
+  # ════════════════════════════════════════════════════════════════════════
+
+  unierp-mobile:
     build:
       context: ../unierp-mobile
       target: dev
       args:
         API_BASE_URL: http://api:3001
-    container_name: unerp-mobile
+    container_name: unierp-mobile
     restart: unless-stopped
+    profiles: ["customer", "l5", "full"]
+    mem_limit: 1g
     volumes:
       - ../unierp-mobile/lib:/app/lib
       - ../unierp-mobile/assets:/app/assets
+      - ../unierp-mobile/web:/app/web
     ports:
-      - "3006:8080"
+      - "4009:8080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_started
 
+  # ════════════════════════════════════════════════════════════════════════
+  # PLATFORM 10 — Desktop App (port 4010)
+  # ════════════════════════════════════════════════════════════════════════
+
+  desktop-app:
+    build:
+      context: ../desktop-app
+      target: dev
+    container_name: desktop-app
+    restart: unless-stopped
+    profiles: ["customer", "l5", "full"]
+    mem_limit: 1g
+    environment:
+      PORT: "4010"
+      HOST: "0.0.0.0"
+      NODE_ENV: development
+    volumes:
+      - ../desktop-app/public:/app/public
+    ports:
+      - "4010:4010"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_started
+
+  # ════════════════════════════════════════════════════════════════════════
+  # SUPPORT — Storybook (port 6006)
+  # ════════════════════════════════════════════════════════════════════════
+
   storybook:
     build:
-      context: ../unierp-storybook
+      context: ../storybook
       target: dev
       args: *registry
-    container_name: unerp-storybook
+    container_name: storybook
     restart: unless-stopped
+    profiles: ["full"]
+    mem_limit: 1g
     environment:
       <<: *watch-env
       NODE_ENV: development
     volumes:
-      - ../unierp-storybook/.storybook:/app/.storybook
-      - ../unierp-design-system/src:/unierp-design-system/src
+      - ../storybook/.storybook:/app/.storybook
+      - ../design-system/src:/unierp-design-system/src
     ports:
       - "6006:6006"
     extra_hosts:

@@ -1,0 +1,15 @@
+{
+  "name": "@kannan19302/platform-wizard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UniERP Master SSO Platform Wizard & Centralized Gateway",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
