@@ -6,7 +6,7 @@
 #
 # PORT ALLOCATION (10 Platforms + 2 Backend Services + Master SSO Wizard)
 # ────────────────────────────────────────────────────────────────────────
-# 4000  ../infra/platform-wizard  Master SSO Wizard & Gateway
+# 4000  ../infra/platform-wizard  Global Platform Wizard (Next.js, real OIDC relying party)
 # 4001  ../marketing-site         L4   P1 — Marketing Site
 # 4002  ../provider-admin-os      L4   P2 — Provider Admin OS (🔒 Internal Only)
 # 4003  ../tenant-apps            L4   P3 — Tenant Applications / ERP
@@ -33,8 +33,8 @@ x-datastore-env: &datastore-env
   S3_ACCESS_KEY: minioadmin
   S3_SECRET_KEY: minioadmin
   S3_BUCKET: unerp-uploads
-  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
-  PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in infra/.env — run scripts/gen-dev-secrets.sh}
+  PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:?set PII_ENCRYPTION_KEY in infra/.env — run scripts/gen-dev-secrets.sh}
 
 x-watch-env: &watch-env
   UV_THREADPOOL_SIZE: "16"
@@ -48,38 +48,71 @@ x-frontend-env: &frontend-env
   API_URL: http://api:3001
   IDP_URL: http://idp:3005
   NEXT_PUBLIC_API_URL: ""
-  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-super-secret-key-change-in-production}
+  # These two are NOT the same value, and neither is redundant with IDP_URL.
+  #
+  #   OIDC_ISSUER            read by each app's SERVER-side app/api/session
+  #                          route to call /oidc/token and /oidc/revoke. It must
+  #                          be the compose service name: inside a container
+  #                          `localhost` is that container, so the default
+  #                          fallback of http://localhost:3005 made every one of
+  #                          the seven platforms fail session restore with
+  #                          ECONNREFUSED 127.0.0.1:3005 while the IdP beside it
+  #                          was perfectly healthy. Only IDP_URL was set, and
+  #                          nothing reads IDP_URL for this.
+  #
+  #   NEXT_PUBLIC_OIDC_ISSUER  baked into the BROWSER bundle (src/lib/oidc-config.ts)
+  #                          and compared verbatim against the `iss` claim, so it
+  #                          has to be the origin a browser can actually reach.
+  OIDC_ISSUER: http://idp:3005
+  NEXT_PUBLIC_OIDC_ISSUER: http://localhost:3005
+  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in infra/.env — run scripts/gen-dev-secrets.sh}
 
 services:
   # ════════════════════════════════════════════════════════════════════════
-  # GATEWAY & MASTER SSO PORTAL (port 4000)
+  # GLOBAL PLATFORM WIZARD (port 4000) — SSO landing page
   # ════════════════════════════════════════════════════════════════════════
 
   platform-wizard:
     build:
       context: ./platform-wizard
       target: dev
+      args:
+        <<: *registry
+        OIDC_ISSUER: http://idp:3005
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in platform-wizard/
+      # Dockerfile. shared/auth-client/react and ui/shell exist locally but not
+      # in the published tarballs of the same version. Kept as a named context
+      # rather than widening `context:` so a plain `docker build` in
+      # platform-wizard/ still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: platform-wizard
     restart: unless-stopped
     profiles: ["wizard", "core", "customer", "l4", "l5", "full"]
-    mem_limit: 512m
+    mem_limit: 1500m
     environment:
-      PORT: "4000"
-      HOST: "0.0.0.0"
+      <<: *watch-env
       NODE_ENV: development
+      PORT: "4000"
+      OIDC_ISSUER: http://idp:3005
+      NEXT_PUBLIC_OIDC_ISSUER: http://localhost:3005
+    volumes:
+      - ./platform-wizard/app:/app/app
+      - ./platform-wizard/src:/app/src
     ports:
       - "4000:4000"
-    volumes:
-      - ./platform-wizard/public:/app/public
-      - ./platform-wizard/server.mjs:/app/server.mjs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/api/auth/session').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/api/session').then(r=>process.exit(r.status===401||r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
       timeout: 5s
-      start_period: 10s
+      start_period: 15s
       retries: 3
+    depends_on:
+      idp:
+        condition: service_started
 
   # ════════════════════════════════════════════════════════════════════════
   # BACKEND SERVICES (L3)
@@ -90,6 +123,12 @@ services:
       context: ../api
       target: dev
       args: *registry
+      # Lets the dev target overlay the LOCAL shared/database packages over the
+      # published ones — see the `localdeps` stage in ../api/Dockerfile. Kept as
+      # a named context rather than widening `context:` so a plain
+      # `docker build` in ../api still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: api
     restart: unless-stopped
     profiles: ["core", "customer", "l4", "l5", "full"]
@@ -100,6 +139,16 @@ services:
       API_PORT: "3001"
       NEXT_PUBLIC_APP_URL: http://localhost:4003
       NEXTAUTH_URL: http://localhost:4003
+      # api verifies RS256 OIDC bearer tokens (from the shared auth-client and
+      # from mobile/desktop) issued by idp. These two are NOT the same thing:
+      #   OIDC_ISSUER   — the identity in the token's `iss` claim, compared
+      #                   verbatim. idp publishes localhost:3005 because that
+      #                   is where browsers reach it.
+      #   OIDC_JWKS_URL — where THIS container fetches the keys, which must be
+      #                   the compose service name; `localhost` inside this
+      #                   container is this container.
+      OIDC_ISSUER: http://localhost:3005
+      OIDC_JWKS_URL: http://idp:3005/oidc/jwks.json
     volumes:
       - ../api/src:/app/src
     ports:
@@ -107,7 +156,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3001/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
       timeout: 5s
       start_period: 60s
@@ -123,10 +172,26 @@ services:
       context: ../idp
       target: dev
       args: *registry
+      # See the api service above and the `localdeps` stage in ../idp/Dockerfile:
+      # the ten W1/W2 Prisma models exist only in the local `data` package, so
+      # the dev image has to build against it rather than published 1.0.14.
+      additional_contexts:
+        localpkgs: ..
     container_name: idp
     restart: unless-stopped
-    profiles: ["core", "customer", "l4", "l5", "full"]
-    mem_limit: 2g
+    # "wizard" belongs here even though idp is not itself the wizard: the
+    # platform-wizard service carries that profile and `depends_on: idp`, and a
+    # depends_on target that is filtered out by the active profile is a hard
+    # config error ("depends on undefined service"), not a soft skip. Without
+    # this, `--profile wizard` could not start at all.
+    profiles: ["wizard", "core", "customer", "l4", "l5", "full"]
+    # 4g, not 2g. idp is the same NestJS + Prisma build as api, and the shared
+    # *watch-env sets NODE_OPTIONS=--max-old-space-size=8192 — V8 is told it has
+    # an 8GB heap, so it will not collect before it reaches the cgroup wall. At
+    # 2g `nest start --watch` pinned 2GiB/2GiB and never finished compiling, so
+    # nothing on 3005 ever answered. api survives the same NODE_OPTIONS only
+    # because its 4g leaves headroom to GC in. Keep these two numbers equal.
+    mem_limit: 4g
     environment:
       <<: [*datastore-env, *watch-env]
       NODE_ENV: development
@@ -159,12 +224,21 @@ services:
       NODE_ENV: development
       PORT: "4001"
       DATABASE_URL: postgresql://unerp:unerp_password@postgres:5432/unerp_marketing?schema=public
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in infra/.env — run scripts/gen-dev-secrets.sh}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in infra/.env — run scripts/gen-dev-secrets.sh}
       NEXT_PUBLIC_API_URL: http://localhost:3001
       NEXT_PUBLIC_ERP_APP_URL: http://localhost:4003
+    # This service keeps its source in app/, lib/ and components/ at the repo
+    # root — it has no src/ (the directory exists on disk but is empty), so the
+    # previous `../marketing-site/src:/app/src` mount bind-mounted nothing over
+    # nothing and editing the app on the host had no effect on the container at
+    # all. prisma/ is mounted too so `prisma migrate deploy` inside the
+    # container sees migrations added on the host without a rebuild.
     volumes:
-      - ../marketing-site/src:/app/src
+      - ../marketing-site/app:/app/app
+      - ../marketing-site/lib:/app/lib
+      - ../marketing-site/components:/app/components
+      - ../marketing-site/prisma:/app/prisma
       - ../marketing-site/public:/app/public
     ports:
       - "4001:4001"
@@ -186,6 +260,14 @@ services:
         <<: *registry
         API_URL: http://api:3001
         IDP_URL: http://idp:3005
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in this service's
+      # Dockerfile. shared/auth-client and ui/shell exist locally but not in the
+      # published tarballs of the same version. Kept as a named context rather
+      # than widening `context:` so a plain `docker build` in the service
+      # directory still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: provider-admin-os
     restart: unless-stopped
     profiles: ["core", "l4", "full"]
@@ -218,6 +300,14 @@ services:
         <<: *registry
         API_URL: http://api:3001
         IDP_URL: http://idp:3005
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in this service's
+      # Dockerfile. shared/auth-client and ui/shell exist locally but not in the
+      # published tarballs of the same version. Kept as a named context rather
+      # than widening `context:` so a plain `docker build` in the service
+      # directory still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: tenant-apps
     restart: unless-stopped
     profiles: ["core", "customer", "l4", "full"]
@@ -225,7 +315,12 @@ services:
     environment:
       <<: *frontend-env
       NEXTAUTH_URL: http://localhost:4003
+    # app/ as well as src/: this service keeps its routes in app/ (the Dockerfile
+    # COPYs both), and every other platform with an app/ directory mounts it.
+    # Without this, editing a route here had no effect until the image was
+    # rebuilt, which reads as "my change did nothing" rather than "not mounted".
     volumes:
+      - ../tenant-apps/app:/app/app
       - ../tenant-apps/src:/app/src
       - ../tenant-apps/public:/app/public
     ports:
@@ -250,6 +345,14 @@ services:
         <<: *registry
         API_URL: http://api:3001
         IDP_URL: http://idp:3005
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in this service's
+      # Dockerfile. shared/auth-client and ui/shell exist locally but not in the
+      # published tarballs of the same version. Kept as a named context rather
+      # than widening `context:` so a plain `docker build` in the service
+      # directory still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: tenant-sites
     restart: unless-stopped
     profiles: ["customer", "l4", "full"]
@@ -282,6 +385,14 @@ services:
         <<: *registry
         API_URL: http://api:3001
         IDP_URL: http://idp:3005
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in this service's
+      # Dockerfile. shared/auth-client and ui/shell exist locally but not in the
+      # published tarballs of the same version. Kept as a named context rather
+      # than widening `context:` so a plain `docker build` in the service
+      # directory still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: web-studio
     restart: unless-stopped
     profiles: ["customer", "l4", "full"]
@@ -314,6 +425,14 @@ services:
         <<: *registry
         API_URL: http://api:3001
         IDP_URL: http://idp:3005
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in this service's
+      # Dockerfile. shared/auth-client and ui/shell exist locally but not in the
+      # published tarballs of the same version. Kept as a named context rather
+      # than widening `context:` so a plain `docker build` in the service
+      # directory still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: tenant-admin
     restart: unless-stopped
     profiles: ["core", "customer", "l4", "full"]
@@ -346,6 +465,14 @@ services:
         <<: *registry
         API_URL: http://api:3001
         IDP_URL: http://idp:3005
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in this service's
+      # Dockerfile. shared/auth-client and ui/shell exist locally but not in the
+      # published tarballs of the same version. Kept as a named context rather
+      # than widening `context:` so a plain `docker build` in the service
+      # directory still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: marketplace
     restart: unless-stopped
     profiles: ["customer", "l4", "full"]
@@ -377,6 +504,14 @@ services:
       args:
         <<: *registry
         API_URL: http://api:3001
+      # Lets the dev target overlay the LOCAL shared/design-system packages over
+      # the published ones — see the `localdeps` stage in this service's
+      # Dockerfile. shared/auth-client and ui/shell exist locally but not in the
+      # published tarballs of the same version. Kept as a named context rather
+      # than widening `context:` so a plain `docker build` in the service
+      # directory still works unchanged.
+      additional_contexts:
+        localpkgs: ..
     container_name: developer-platform
     restart: unless-stopped
     profiles: ["l4", "full"]
@@ -462,9 +597,16 @@ services:
     environment:
       <<: *watch-env
       NODE_ENV: development
+    # /design-system/src, NOT /unierp-design-system/src. .storybook/main.ts globs
+    # '../../design-system/src/**/*.stories.@(ts|tsx)' and aliases
+    # @kannan19302/ui to the same path — both relative to /app/.storybook, which
+    # resolves to /design-system/src. Nothing in this repo ever referenced
+    # /unierp-design-system, so the 49 story files were mounted somewhere no
+    # config looked: Storybook booted fine, answered 200 on :6006, and served an
+    # empty catalogue with "No story files found for the specified pattern".
     volumes:
       - ../storybook/.storybook:/app/.storybook
-      - ../design-system/src:/unierp-design-system/src
+      - ../design-system/src:/design-system/src
     ports:
       - "6006:6006"
     extra_hosts:

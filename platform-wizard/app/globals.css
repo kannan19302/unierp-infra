@@ -1,0 +1,25 @@
+@import "@kannan19302/ui/tokens/index.css";
+@import "@kannan19302/ui/styles";
+/* dist/styles.css — the CSS-MODULE bundle, which is a different file from
+   "@kannan19302/ui/styles" (that resolves to dist/styles/globals.css, which is
+   only tokens + layers and never imports this one). Every CSS-module class in
+   the design system — Card, Button, Modal, and the wizard grid — lives here, so
+   without this line they silently render unstyled. provider-admin-os already
+   imports both for the same reason. */
+@import "@kannan19302/ui/styles.css";
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  /* var(--font-sans), not a hardcoded stack: this was the one platform in the
+     estate overriding the design system's Inter and rendering in a different
+     typeface from everything it links to. */
+  font-family: var(--font-sans);
+}
+
+* {
+  box-sizing: border-box;
+}

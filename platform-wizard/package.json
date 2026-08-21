@@ -1,15 +1,38 @@
 {
   "name": "@kannan19302/platform-wizard",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "UniERP Master SSO Platform Wizard & Centralized Gateway",
-  "type": "module",
-  "main": "server.mjs",
+  "description": "UniERP Global Platform Wizard — SSO landing page and platform switcher (P0, port 4000). Replaces the vanilla-Node mock: the wizard is a real Next.js relying party on the OIDC provider in idp, not a source of authentication decisions.",
   "scripts": {
-    "dev": "node server.mjs",
-    "start": "node server.mjs",
-    "test": "node --test"
+    "dev": "next dev -p 4000",
+    "build": "next build",
+    "start": "next start -p 4000",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "@kannan19302/shared": "^1.0.5",
+    "@kannan19302/ui": "^1.0.15",
+    "lucide-react": "^0.460.0",
+    "jose": "^5.9.6",
+    "next": "15.3.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "@vitest/coverage-v8": "4.1.10",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^16.3.0",
+    "jsdom": "^30.0.1",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.10"
+  }
 }
