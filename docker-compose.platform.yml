@@ -199,6 +199,7 @@ services:
       API_PORT: "3005"
     volumes:
       - ../idp/src:/app/src
+      - ../idp/dist:/app/dist
     ports:
       - "3005:3005"
     extra_hosts:
@@ -215,10 +216,16 @@ services:
     build:
       context: ../marketing-site
       target: dev
+      args:
+        <<: *registry
+        API_URL: http://api:3001
+        IDP_URL: http://idp:3005
+      additional_contexts:
+        localpkgs: ..
     container_name: marketing-site
     restart: unless-stopped
     profiles: ["l4", "full"]
-    mem_limit: 1500m
+    mem_limit: 2g
     environment:
       <<: *watch-env
       NODE_ENV: development
@@ -229,17 +236,15 @@ services:
       NEXT_PUBLIC_API_URL: http://localhost:3001
       NEXT_PUBLIC_ERP_APP_URL: http://localhost:4003
     # This service keeps its source in app/, lib/ and components/ at the repo
-    # root — it has no src/ (the directory exists on disk but is empty), so the
-    # previous `../marketing-site/src:/app/src` mount bind-mounted nothing over
-    # nothing and editing the app on the host had no effect on the container at
-    # all. prisma/ is mounted too so `prisma migrate deploy` inside the
-    # container sees migrations added on the host without a rebuild.
+    # root. prisma/ is mounted too so migrations added on the host are visible.
+    # next.config.mjs is mounted so config updates take effect immediately on dev server reload.
     volumes:
       - ../marketing-site/app:/app/app
       - ../marketing-site/lib:/app/lib
       - ../marketing-site/components:/app/components
       - ../marketing-site/prisma:/app/prisma
       - ../marketing-site/public:/app/public
+      - ../marketing-site/next.config.mjs:/app/next.config.mjs
     ports:
       - "4001:4001"
     extra_hosts:
