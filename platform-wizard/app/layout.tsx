@@ -14,10 +14,11 @@ import "./globals.css";
  * keys, and ThemeProvider then takes over without changing anything.
  */
 const NO_FLASH_SCRIPT = `(function(){try{
-var s=localStorage.getItem('unerp.theme');
+var c=document.cookie.split('; ').find(function(v){return v.indexOf('unierp_theme=')===0});
+var s=(c?decodeURIComponent(c.split('=').slice(1).join('=')):null)||localStorage.getItem('unierp.theme')||localStorage.getItem('unerp.theme');
 var t=(!s||s==='system')?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):s;
 document.documentElement.setAttribute('data-theme',t);
-var d=localStorage.getItem('unerp.density');
+var d=localStorage.getItem('unierp.density')||localStorage.getItem('unerp.density');
 if(d)document.documentElement.setAttribute('data-density',d);
 }catch(e){}})()`;
 

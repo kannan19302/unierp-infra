@@ -10,7 +10,8 @@
 # ── What this file is, and what it deliberately is not ──────────────────────
 #
 # This is the stack of services that **no application repository owns**:
-# PostgreSQL, Redis, MinIO, and the optional pooler and inference server. Every
+# PostgreSQL, Redis, MinIO, the local email capture service, and the optional
+# pooler and inference server. Every
 # plane in the platform talks to these, so they belong to the layer that owns
 # environment topology (PLATFORM_ARCHITECTURE.md § 4.2, L7) rather than to any
 # one consumer of them.
@@ -123,6 +124,30 @@ services:
       retries: 10
 
   # ──────────────────────────────────────────────
+  # Mailpit — deterministic local auth-email delivery
+  # ──────────────────────────────────────────────
+  # Bound to loopback only. Production uses a transactional provider and must
+  # never expose a capture inbox.
+  mailpit:
+    image: axllent/mailpit:v1.31.0
+    container_name: mailpit
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_DATABASE: /data/mailpit.db
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────
   # MinIO — S3-compatible object storage
   # ──────────────────────────────────────────────
   minio:
@@ -166,4 +191,5 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  mailpit_data:
   ollama_data:

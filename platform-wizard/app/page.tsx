@@ -1,21 +1,27 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@kannan19302/shared/auth-client/react";
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, Search, Sparkles } from "lucide-react";
 import {
   PlatformShell,
   PlatformWizardGrid,
   type WizardTile,
 } from "@kannan19302/ui/shell";
-import { oidcConfig } from "@/lib/oidc-config";
+import { createWizardOidcClient, oidcConfig } from "@/lib/oidc-config";
 import { PLATFORM_META, platformOrder } from "@/lib/platform-meta";
-import { ThemeToggle } from "./theme-toggle";
+import {
+  EMPTY_PLATFORM_PREFERENCES,
+  parsePlatformPreferences,
+  preferenceStorageKey,
+  recordRecentPlatform,
+  setPlatformFavorite,
+  type PlatformWizardPreferences,
+} from "@/lib/platform-preferences";
+import styles from "./page.module.css";
 
 import { OnboardingFlow } from "@/components/OnboardingFlow";
-import { Sparkles, Compass } from "lucide-react";
-
 interface PlatformSummary {
   code: string;
   name: string;
@@ -23,7 +29,22 @@ interface PlatformSummary {
   baseUrl: string;
   icon: string | null;
   audience: string;
+  lifecycle: string;
+  surfaceType: string;
+  category: string;
+  visibility: "VISIBLE_ENABLED" | "VISIBLE_DISABLED";
+  launchAllowed: boolean;
+  reasonCodes: string[];
+  obligations: string[];
 }
+
+const REASON_LABELS: Record<string, string> = {
+  PLATFORM_MAINTENANCE: "Maintenance",
+  PLATFORM_SUSPENDED: "Suspended",
+  STEP_UP_REQUIRED: "Verification required",
+  EXPLICIT_DENY: "Restricted",
+  NO_MATCHING_ENTITLEMENT: "Not entitled",
+};
 
 /**
  * The Global Platform Wizard & Onboarding Launchpad.
@@ -41,7 +62,7 @@ export default function WizardPage() {
 }
 
 function WizardPageInner() {
-  const { status, claims, accessToken, signIn, signOut } = useSession();
+  const { status, claims, accessToken, signIn } = useSession();
   const searchParams = useSearchParams();
   const next = searchParams.get("next");
   const isWelcome = searchParams.get("welcome") === "true";
@@ -53,6 +74,12 @@ function WizardPageInner() {
   const [platforms, setPlatforms] = useState<PlatformSummary[] | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [fetchAttempt, setFetchAttempt] = useState(0);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("ALL");
+  const [platformPreferences, setPlatformPreferences] = useState<PlatformWizardPreferences>(
+    EMPTY_PLATFORM_PREFERENCES,
+  );
+  const [preferenceStatus, setPreferenceStatus] = useState("");
 
   useEffect(() => {
     if (isWelcome) {
@@ -81,7 +108,7 @@ function WizardPageInner() {
         });
         if (!res.ok) throw new Error(`Platform list request failed (${res.status})`);
         const body = await res.json();
-        if (!cancelled) setPlatforms(body.platforms);
+        if (!cancelled) setPlatforms(Array.isArray(body.platforms) ? body.platforms : []);
       } catch (err) {
         if (!cancelled) {
           setFetchError(err instanceof Error ? err.message : "Could not load platforms");
@@ -94,21 +121,129 @@ function WizardPageInner() {
     };
   }, [status, accessToken, fetchAttempt]);
 
+  // Preferences improve ordering only. They are deliberately loaded through a
+  // separate request so a profile-service failure can never suppress the
+  // policy-authoritative platform list.
+  useEffect(() => {
+    if (status !== "authenticated" || !accessToken || !claims?.sub || !claims.tenantId) return;
+    let cancelled = false;
+    const storageKey = preferenceStorageKey(claims.sub, claims.tenantId);
+
+    try {
+      const cached = window.localStorage.getItem(storageKey);
+      if (cached) setPlatformPreferences(parsePlatformPreferences(JSON.parse(cached)));
+    } catch {
+      // A corrupt or unavailable device cache is disposable; server state is
+      // still loaded below and authorization never depends on this document.
+    }
+
+    (async () => {
+      try {
+        const response = await fetch(new URL("/api/v1/auth/me", oidcConfig.issuer), {
+          headers: { authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) return;
+        const profile = await response.json() as { preferences?: Record<string, unknown> };
+        const remote = profile.preferences?.platformWizard;
+        if (!remote || cancelled) return;
+        const parsed = parsePlatformPreferences(remote);
+        setPlatformPreferences(parsed);
+        window.localStorage.setItem(storageKey, JSON.stringify(parsed));
+      } catch {
+        // Local fallback is intentionally retained when cross-device sync is
+        // temporarily unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, accessToken, claims?.sub, claims?.tenantId]);
+
+  const persistPlatformPreferences = useCallback((nextPreferences: PlatformWizardPreferences) => {
+    const sanitized = parsePlatformPreferences(nextPreferences);
+    setPlatformPreferences(sanitized);
+
+    if (claims?.sub && claims.tenantId) {
+      try {
+        window.localStorage.setItem(
+          preferenceStorageKey(claims.sub, claims.tenantId),
+          JSON.stringify(sanitized),
+        );
+      } catch {
+        // Cross-device persistence below remains available when storage is
+        // disabled, full, or denied by the browser.
+      }
+    }
+
+    if (!accessToken) return;
+    void fetch(new URL("/api/v1/auth/me", oidcConfig.issuer), {
+      method: "PATCH",
+      keepalive: true,
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ preferences: { platformWizard: sanitized } }),
+    }).then((response) => {
+      setPreferenceStatus(response.ok
+        ? "Platform preferences synced."
+        : "Saved on this device; cross-device sync is temporarily unavailable.");
+    }).catch(() => {
+      setPreferenceStatus("Saved on this device; cross-device sync is temporarily unavailable.");
+    });
+  }, [accessToken, claims?.sub, claims?.tenantId]);
+
   // Deep-link handoff: once the entitled platform list has actually loaded
   // and includes the requested one, go straight there rather than making the
   // user click a tile they were already headed for.
   useEffect(() => {
     if (!next || !platforms) return;
     const target = platforms.find((p) => p.code === next);
-    if (target) window.location.assign(target.baseUrl);
+    if (target?.launchAllowed) window.location.assign(target.baseUrl);
   }, [next, platforms]);
+
+  const categories = useMemo(
+    () => ["ALL", "FAVORITES", ...Array.from(new Set((platforms ?? []).map((platform) => platform.category)))],
+    [platforms],
+  );
+
+  const favoriteCodes = useMemo(
+    () => new Set(platformPreferences.favoriteCodes),
+    [platformPreferences.favoriteCodes],
+  );
+  const recentOrder = useMemo(
+    () => new Map(platformPreferences.recent.map((item, index) => [item.code, index])),
+    [platformPreferences.recent],
+  );
+
+  const visiblePlatforms = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return (platforms ?? []).filter((platform) => {
+      const matchesCategory = category === "ALL" ||
+        (category === "FAVORITES" ? favoriteCodes.has(platform.code) : platform.category === category);
+      const meta = PLATFORM_META[platform.code];
+      const matchesQuery = !normalized ||
+        platform.name.toLowerCase().includes(normalized) ||
+        platform.code.toLowerCase().includes(normalized) ||
+        meta?.description?.toLowerCase().includes(normalized);
+      return matchesCategory && matchesQuery;
+    });
+  }, [platforms, category, query, favoriteCodes]);
 
   const tiles = useMemo<WizardTile[]>(
     () =>
-      [...(platforms ?? [])]
-        // The IdP orders by `code` as a STRING, so "P10" sorts before "P2" and
-        // Desktop led the grid. Sort on the numeric suffix instead.
-        .sort((a, b) => platformOrder(a.code) - platformOrder(b.code))
+      [...visiblePlatforms]
+        // Favorites and recents are presentation hints only and are applied
+        // after the policy response has already constrained this array.
+        .sort((a, b) => {
+          const favoriteDelta = Number(favoriteCodes.has(b.code)) - Number(favoriteCodes.has(a.code));
+          if (favoriteDelta) return favoriteDelta;
+          const recentA = recentOrder.get(a.code) ?? Number.MAX_SAFE_INTEGER;
+          const recentB = recentOrder.get(b.code) ?? Number.MAX_SAFE_INTEGER;
+          if (recentA !== recentB) return recentA - recentB;
+          return platformOrder(a.code) - platformOrder(b.code);
+        })
         .map((p) => {
           const meta = PLATFORM_META[p.code];
           const Icon = meta?.icon;
@@ -117,16 +252,26 @@ function WizardPageInner() {
             name: p.name,
             description: meta?.description,
             href: p.baseUrl,
+            disabled: !p.launchAllowed,
             // The tile type has always supported an icon; nothing ever passed
             // one, so every tile rendered an empty grey well.
             icon: Icon ? <Icon size={22} strokeWidth={1.75} aria-hidden="true" /> : undefined,
             accent: meta?.accent,
             accentDark: meta?.accentDark,
+            favorite: favoriteCodes.has(p.code),
+            onFavoriteChange: p.launchAllowed
+              ? (favorite) => {
+                  setPreferenceStatus("");
+                  persistPlatformPreferences(setPlatformFavorite(platformPreferences, p.code, favorite));
+                }
+              : undefined,
+            onLaunch: p.launchAllowed
+              ? () => persistPlatformPreferences(recordRecentPlatform(platformPreferences, p.code))
+              : undefined,
             // An audience is a property of the platform, not a description of
             // it — it used to occupy the description slot and crowd out the
             // real one.
-            badge:
-              p.audience === "INTERNAL" ? (
+            badge: (
                 <span
                   style={{
                     fontSize: "var(--text-xs)",
@@ -139,23 +284,34 @@ function WizardPageInner() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  Internal
+                  {p.launchAllowed
+                    ? p.audience === "INTERNAL"
+                      ? "Internal"
+                      : p.surfaceType === "NATIVE_CLIENT"
+                        ? "Native app"
+                        : p.code
+                    : REASON_LABELS[p.reasonCodes[0] ?? ""] ?? "Unavailable"}
                 </span>
-              ) : undefined,
+              ),
           };
         }),
-    [platforms],
+    [visiblePlatforms, favoriteCodes, recentOrder, persistPlatformPreferences, platformPreferences],
   );
 
   // `?next=` names a platform this account cannot reach (or that does not
   // exist). Previously the effect above simply found nothing and the user was
   // dropped on the grid with no explanation of why the deep link did nothing.
-  const nextMissing =
-    !!next && platforms !== null && !platforms.some((p) => p.code === next);
+  const nextTarget = next && platforms?.find((platform) => platform.code === next);
+  const nextMissing = !!next && platforms !== null && !nextTarget;
+  const nextBlocked = !!nextTarget && !nextTarget.launchAllowed;
+  const launchableCount = platforms?.filter((platform) => platform.launchAllowed).length ?? 0;
 
   return (
     <PlatformShell
       platformName="UniERP"
+      accountCenterUrl={`${oidcConfig.issuer}/oidc/account`}
+      environmentLabel={oidcConfig.issuer.includes("localhost") ? "Local" : "Production"}
+      realmLabel={(claims as unknown as { realm?: string } | null)?.realm ?? "tenant"}
       user={
         claims
           ? {
@@ -166,8 +322,20 @@ function WizardPageInner() {
           : null
       }
       onSignOut={async () => {
-        await fetch("/api/session", { method: "DELETE", credentials: "include" });
-        signOut();
+        try {
+          await fetch("/api/session", {
+            method: "DELETE",
+            credentials: "include",
+            signal: AbortSignal.timeout(5_000),
+          });
+        } finally {
+          // A slow or unavailable local session endpoint must never trap the
+          // user in an authenticated UI. Central logout revokes every grant
+          // from this SSO session and clears the IdP cookies.
+          window.location.replace(
+            createWizardOidcClient().buildLogoutUrl("http://localhost:4000/"),
+          );
+        }
       }}
       platformIcon={<LayoutGrid size={18} aria-hidden="true" />}
       accentColor="var(--color-primary)"
@@ -200,7 +368,6 @@ function WizardPageInner() {
               </>
             )}
           </button>
-          <ThemeToggle />
         </div>
       }
     >
@@ -213,56 +380,59 @@ function WizardPageInner() {
         />
       ) : (
         <>
-          <header
-            style={{
-              maxWidth: "var(--content-max-width)",
-              margin: "0 auto",
-              padding: "var(--space-8) var(--space-6) 0",
-            }}
-          >
-            <h1
-              style={{
-                fontSize: "var(--text-3xl)",
-                fontWeight: "var(--weight-semibold)",
-                color: "var(--color-text)",
-                margin: 0,
-              }}
-            >
-              Choose a platform
-            </h1>
-            <p
-              aria-live="polite"
-              style={{
-                color: "var(--color-text-secondary)",
-                fontSize: "var(--text-base)",
-                marginTop: "var(--space-2)",
-                marginBottom: 0,
-              }}
-            >
+          <header className={styles.atlasHeader}>
+            <div>
+              <span className={styles.eyebrow}>Workspace atlas</span>
+              <h1 className={styles.title}>Where do you want to work?</h1>
+              <p aria-live="polite" className={styles.lede}>
               {platforms === null
                 ? "Loading the platforms available to you…"
-                : tiles.length === 1
-                  ? "1 platform is available to you."
-                  : `${tiles.length} platforms are available to you.`}
-            </p>
-            {nextMissing && (
+                : `${launchableCount} of ${platforms.length} visible platforms are ready to launch.`}
+              </p>
+            </div>
+            <div className={styles.statusPlate} aria-label="Platform access summary">
+              <span className={styles.statusNumber}>{launchableCount}</span>
+              <span className={styles.statusLabel}>Launchable now</span>
+              <span className={styles.statusRule} />
+              <span className={styles.statusMeta}>{(platforms?.length ?? 0) - launchableCount} restricted or paused</span>
+            </div>
+            {(nextMissing || nextBlocked) && (
               <p
                 role="status"
-                style={{
-                  marginTop: "var(--space-4)",
-                  marginBottom: 0,
-                  padding: "var(--space-3) var(--space-4)",
-                  borderRadius: "var(--radius-md)",
-                  background: "var(--color-warning-light, var(--color-bg-sunken))",
-                  border: "1px solid var(--color-border)",
-                  color: "var(--color-text)",
-                  fontSize: "var(--text-sm)",
-                }}
+                className={styles.notice}
               >
-                <strong>{next}</strong> is not available for your account. Choose a platform below.
+                <strong>{next}</strong> {nextBlocked ? "cannot be launched right now" : "is not available for your account"}. Choose a platform below.
               </p>
             )}
           </header>
+
+          <section className={styles.controls} aria-label="Filter platforms">
+            <label className={styles.search}>
+              <span className="sr-only">Search platforms</span>
+              <Search size={17} aria-hidden="true" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by platform, purpose, or code"
+              />
+            </label>
+            <div className={styles.categories} aria-label="Platform categories">
+              {categories.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  aria-pressed={category === item}
+                  onClick={() => setCategory(item)}
+                >
+                  {item === "ALL" ? "All" : item.toLowerCase()}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <p className={styles.preferenceStatus} role="status" aria-live="polite">
+            {preferenceStatus}
+          </p>
 
           <PlatformWizardGrid
             tiles={tiles}
@@ -271,7 +441,9 @@ function WizardPageInner() {
             onRetry={() => setFetchAttempt((n) => n + 1)}
             forbidden={status === "authenticated" && platforms !== null && platforms.length === 0}
             emptyTitle="No platforms available"
-            emptyDescription="Your account is not currently entitled to any UniERP platform. Contact your administrator."
+            emptyDescription={platforms?.length
+              ? "No platforms match this search and category."
+              : "Your account is not currently entitled to any UniERP platform. Contact your administrator."}
           />
         </>
       )}

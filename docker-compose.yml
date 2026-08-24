@@ -6,6 +6,7 @@
 #   4000  platform-wizard       Master SSO Gateway & Platform Switcher
 #   5432  postgres              PostgreSQL 16 + pgvector
 #   6379  redis                 Redis 7 Alpine
+#   8025  mailpit               Local transactional-email inbox (SMTP 1025)
 #   9000  minio                 MinIO S3 Storage (9001 Web Console)
 #   6432  pgbouncer             PgBouncer Pooler (--profile pooling)
 #   11434 ollama                Local AI Inference (--profile ai)
@@ -84,6 +85,31 @@ services:
       retries: 10
 
   # ──────────────────────────────────────────────
+  # Mailpit — deterministic local auth-email delivery
+  # ──────────────────────────────────────────────
+  # Development only: messages remain on this workstation and are visible at
+  # http://localhost:8025. Production uses Resend/Brevo/SMTP credentials and
+  # must never expose a capture inbox.
+  mailpit:
+    image: axllent/mailpit:v1.31.0
+    container_name: mailpit
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_DATABASE: /data/mailpit.db
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────────────────────────────────────────
   # MinIO — S3-compatible Object Storage
   # ──────────────────────────────────────────────
   minio:
@@ -156,6 +182,8 @@ volumes:
   redis_data:
     driver: local
   minio_data:
+    driver: local
+  mailpit_data:
     driver: local
   ollama_data:
     driver: local
