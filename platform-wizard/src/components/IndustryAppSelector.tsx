@@ -20,6 +20,8 @@ import {
   CheckCircle2,
   Plus,
   Check,
+  ShieldCheck,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +36,24 @@ export interface AppModuleItem {
 }
 
 export const ALL_APPS: AppModuleItem[] = [
+  {
+    id: "pcc",
+    name: "Provider Control Center (PCC)",
+    category: "operations",
+    description: "Platform operations, multi-cloud fleets, security intelligence, FinOps & SRE runbooks (22 apps)",
+    icon: ShieldCheck,
+    accent: "#475569",
+    recommendedFor: ["all"],
+  },
+  {
+    id: "occ",
+    name: "Organization Control Center (OCC)",
+    category: "operations",
+    description: "Workforce directory, access governance, organization entitlements, extensions & AI policies (22 apps)",
+    icon: SlidersHorizontal,
+    accent: "#f59e0b",
+    recommendedFor: ["all"],
+  },
   {
     id: "finance",
     name: "Finance & Accounting",

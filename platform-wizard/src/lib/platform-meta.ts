@@ -62,7 +62,7 @@ export const PLATFORM_META: Record<string, PlatformMeta> = {
     icon: ShieldCheck,
     accent: "#475569",
     accentDark: "#94a3b8",
-    description: "Control-plane operations for UniERP staff",
+    description: "Provider Control Center (PCC) · 22 platform operations apps",
   },
   P3: {
     icon: LayoutGrid,
@@ -86,7 +86,7 @@ export const PLATFORM_META: Record<string, PlatformMeta> = {
     icon: SlidersHorizontal,
     accent: "#b45309",
     accentDark: "#fbbf24",
-    description: "Users, roles, billing and settings",
+    description: "Organization Control Center (OCC) · 22 tenant governance apps",
   },
   P7: {
     icon: Store,

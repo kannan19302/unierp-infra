@@ -204,7 +204,12 @@ function WizardPageInner() {
   }, [next, platforms]);
 
   const categories = useMemo(
-    () => ["ALL", "FAVORITES", ...Array.from(new Set((platforms ?? []).map((platform) => platform.category)))],
+    () => [
+      "ALL",
+      "CONTROL CENTERS",
+      "FAVORITES",
+      ...Array.from(new Set((platforms ?? []).map((platform) => platform.category))),
+    ],
     [platforms],
   );
 
@@ -220,13 +225,29 @@ function WizardPageInner() {
   const visiblePlatforms = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return (platforms ?? []).filter((platform) => {
-      const matchesCategory = category === "ALL" ||
-        (category === "FAVORITES" ? favoriteCodes.has(platform.code) : platform.category === category);
+      const isControlCenter = platform.code === "P2" || platform.code === "P6";
+      const matchesCategory =
+        category === "ALL" ||
+        (category === "CONTROL CENTERS"
+          ? isControlCenter
+          : category === "FAVORITES"
+            ? favoriteCodes.has(platform.code)
+            : platform.category === category);
       const meta = PLATFORM_META[platform.code];
-      const matchesQuery = !normalized ||
+      const matchesQuery =
+        !normalized ||
         platform.name.toLowerCase().includes(normalized) ||
         platform.code.toLowerCase().includes(normalized) ||
-        meta?.description?.toLowerCase().includes(normalized);
+        meta?.description?.toLowerCase().includes(normalized) ||
+        (platform.code === "P2" &&
+          (normalized.includes("pcc") ||
+            normalized.includes("provider") ||
+            normalized.includes("control center"))) ||
+        (platform.code === "P6" &&
+          (normalized.includes("occ") ||
+            normalized.includes("tenant") ||
+            normalized.includes("organization") ||
+            normalized.includes("control center")));
       return matchesCategory && matchesQuery;
     });
   }, [platforms, category, query, favoriteCodes]);
@@ -278,18 +299,32 @@ function WizardPageInner() {
                     fontWeight: "var(--weight-semibold)",
                     padding: "2px var(--space-2)",
                     borderRadius: "var(--radius-full)",
-                    background: "var(--color-bg-sunken)",
-                    color: "var(--color-text-secondary)",
+                    background:
+                      p.code === "P2"
+                        ? "rgba(71,85,105,0.15)"
+                        : p.code === "P6"
+                          ? "rgba(245,158,11,0.15)"
+                          : "var(--color-bg-sunken)",
+                    color:
+                      p.code === "P2"
+                        ? "#94a3b8"
+                        : p.code === "P6"
+                          ? "#fbbf24"
+                          : "var(--color-text-secondary)",
                     border: "1px solid var(--color-border)",
                     whiteSpace: "nowrap",
                   }}
                 >
                   {p.launchAllowed
-                    ? p.audience === "INTERNAL"
-                      ? "Internal"
-                      : p.surfaceType === "NATIVE_CLIENT"
-                        ? "Native app"
-                        : p.code
+                    ? p.code === "P2"
+                      ? "PCC · 22 Apps"
+                      : p.code === "P6"
+                        ? "OCC · 22 Apps"
+                        : p.audience === "INTERNAL"
+                          ? "Internal"
+                          : p.surfaceType === "NATIVE_CLIENT"
+                            ? "Native app"
+                            : p.code
                     : REASON_LABELS[p.reasonCodes[0] ?? ""] ?? "Unavailable"}
                 </span>
               ),
