@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { ProvisioningTracker } from "./ProvisioningTracker";
 import { IndustryAppSelector } from "./IndustryAppSelector";
+import { provisionWorkspace } from "@/lib/workspace-service";
 
 interface OnboardingFlowProps {
   initialSlug?: string;
@@ -568,7 +569,16 @@ export function OnboardingFlow({
 
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
+                await provisionWorkspace({
+                  organizationName: orgName,
+                  slug: initialSlug || orgName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+                  industry: initialIndustry,
+                  brandAccent,
+                  fiscalYearStart,
+                  selectedApps,
+                  teamInvites: invites,
+                });
                 if (onFinish) onFinish();
                 else window.location.assign("http://localhost:3000");
               }}

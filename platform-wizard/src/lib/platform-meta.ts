@@ -40,16 +40,16 @@ export interface PlatformMeta {
   accentDark: string;
   /** One line, sentence case, no trailing period — rendered under the name. */
   description: string;
+  /** Key feature modules / capabilities for sub-pills */
+  subModules: string[];
+  /** Default port or client descriptor */
+  defaultPort: number | string;
+  /** Specific badge label */
+  badgeLabel?: string;
 }
 
 /**
  * Codes and names are authoritative in data/prisma/seed-platform-entitlement.ts.
- *
- * Hues are picked for separation across ten tiles while harmonising with the
- * accent each sibling platform already uses on its own landing page: P5 violet
- * ≈ web-studio, P7 sky ≈ marketplace, P8 blue ≈ developer-platform, P6 amber ≈
- * tenant-admin, P10 emerald ≈ tenant-sites. P2 is deliberately neutral slate —
- * it is internal tooling, not a product.
  */
 export const PLATFORM_META: Record<string, PlatformMeta> = {
   P1: {
@@ -57,60 +57,90 @@ export const PLATFORM_META: Record<string, PlatformMeta> = {
     accent: "#c2410c",
     accentDark: "#fb923c",
     description: "Public marketing and product pages",
+    subModules: ["Product Pages", "Pricing Matrix", "Docs Portal"],
+    defaultPort: 3001,
+    badgeLabel: "P1 · Corporate",
   },
   P2: {
     icon: ShieldCheck,
     accent: "#475569",
     accentDark: "#94a3b8",
     description: "Provider Control Center (PCC) · 22 platform operations apps",
+    subModules: ["Fleet Ops", "Telemetry", "Security Audit", "FinOps Runbooks"],
+    defaultPort: 3002,
+    badgeLabel: "PCC · 22 Apps",
   },
   P3: {
     icon: LayoutGrid,
     accent: "#4f46e5",
     accentDark: "#818cf8",
     description: "Your installed business modules",
+    subModules: ["General Ledger", "Sales Pipeline", "Supply Chain", "HR Payroll", "MRP II"],
+    defaultPort: 3000,
+    badgeLabel: "P3 · Core Suite",
   },
   P4: {
     icon: Globe,
     accent: "#0f766e",
     accentDark: "#2dd4bf",
     description: "Live customer-facing websites",
+    subModules: ["Custom Domains", "E-Commerce", "Customer Portals", "SEO Pages"],
+    defaultPort: 3004,
+    badgeLabel: "P4 · Hosted Web",
   },
   P5: {
     icon: PenTool,
     accent: "#7c3aed",
     accentDark: "#a78bfa",
     description: "Visual page and site builder",
+    subModules: ["Visual Canvas", "Component Tree", "CMS Templates", "Theme Studio"],
+    defaultPort: 3005,
+    badgeLabel: "P5 · Designer",
   },
   P6: {
     icon: SlidersHorizontal,
     accent: "#b45309",
     accentDark: "#fbbf24",
     description: "Organization Control Center (OCC) · 22 tenant governance apps",
+    subModules: ["IAM Directory", "App Governance", "Audit Trails", "Policy Engine"],
+    defaultPort: 3006,
+    badgeLabel: "OCC · 22 Apps",
   },
   P7: {
     icon: Store,
     accent: "#0369a1",
     accentDark: "#38bdf8",
     description: "Discover and install modules",
+    subModules: ["Extensions", "Integration Hub", "Plugin Store", "SDK Packages"],
+    defaultPort: 3007,
+    badgeLabel: "P7 · Ecosystem",
   },
   P8: {
     icon: Code2,
     accent: "#1d4ed8",
     accentDark: "#60a5fa",
     description: "APIs, keys, webhooks and docs",
+    subModules: ["REST API", "GraphQL API", "Webhook Engine", "API Key Mint"],
+    defaultPort: 3008,
+    badgeLabel: "P8 · Developer",
   },
   P9: {
     icon: Smartphone,
     accent: "#be185d",
     accentDark: "#f472b6",
     description: "The UniERP mobile experience",
+    subModules: ["Flutter Mobile", "Offline Sync", "Barcode Scan", "Biometrics"],
+    defaultPort: "Mobile Client",
+    badgeLabel: "Native Mobile",
   },
   P10: {
     icon: Monitor,
     accent: "#047857",
     accentDark: "#34d399",
     description: "The installable desktop client",
+    subModules: ["Electron Desktop", "Local SQLite", "Hardware POS", "Multi-Window"],
+    defaultPort: "Desktop Client",
+    badgeLabel: "Native Desktop",
   },
 };
 
