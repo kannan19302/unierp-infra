@@ -75,7 +75,8 @@ export function CommandPalette({ open, onClose, platforms }: CommandPaletteProps
       e.preventDefault();
       const target = filtered[selectedIndex];
       if (target.allowed) {
-        window.location.assign(target.href);
+        window.open(target.href, "_blank", "noopener,noreferrer");
+        onClose();
       }
     } else if (e.key === "Escape") {
       onClose();
@@ -171,7 +172,10 @@ export function CommandPalette({ open, onClose, platforms }: CommandPaletteProps
                 <div
                   key={item.id}
                   onClick={() => {
-                    if (item.allowed) window.location.assign(item.href);
+                    if (item.allowed) {
+                      window.open(item.href, "_blank", "noopener,noreferrer");
+                      onClose();
+                    }
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
                   style={{

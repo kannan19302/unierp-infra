@@ -151,6 +151,14 @@ services:
       OIDC_JWKS_URL: http://idp:3005/oidc/jwks.json
     volumes:
       - ../api/src:/app/src
+    develop:
+      watch:
+        - action: rebuild
+          path: ../api/src
+        - action: rebuild
+          path: ../api/package.json
+        - action: rebuild
+          path: ../api/Dockerfile
     ports:
       - "3001:3001"
     extra_hosts:
@@ -234,6 +242,14 @@ services:
       # image artifact with whichever host build happened to exist, silently
       # reverting runtime security and policy fixes after a successful build.
       - ../idp/src:/app/src
+    develop:
+      watch:
+        - action: rebuild
+          path: ../idp/src
+        - action: rebuild
+          path: ../idp/package.json
+        - action: rebuild
+          path: ../idp/Dockerfile
     ports:
       - "3005:3005"
     extra_hosts:

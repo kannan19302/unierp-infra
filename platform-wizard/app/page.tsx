@@ -3,8 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@kannan19302/shared/auth-client/react";
-import { Command, LayoutGrid, Search, Sparkles, AlertTriangle } from "lucide-react";
-import { BrandMark } from "@/components/BrandMark";
+import { Search, Sparkles, AlertTriangle } from "lucide-react";
 import { createWizardOidcClient, oidcConfig } from "@/lib/oidc-config";
 import { PLATFORM_META, platformOrder } from "@/lib/platform-meta";
 import {
@@ -46,6 +45,17 @@ const REASON_LABELS: Record<string, string> = {
   EXPLICIT_DENY: "Restricted",
   NO_MATCHING_ENTITLEMENT: "Not entitled",
 };
+
+// Static Atlas Index mapping for clean reference summary
+const ATLAS_INDEX_ITEMS = [
+  { code: "P1 Corporate", label: "Marketing" },
+  { code: "P3 Core Suite", label: "Tenant Apps" },
+  { code: "P4 Hosted Web", label: "Tenant Sites" },
+  { code: "P7 Ecosystem", label: "Marketplace" },
+  { code: "P8 Developer", label: "APIs & SDKs" },
+  { code: "OCC Org Control", label: "22 apps" },
+  { code: "PCC Provider Control", label: "22 apps" },
+];
 
 /**
  * The Global Platform Wizard & Workspace Atlas (Port 4000).
@@ -216,11 +226,11 @@ function WizardPageInner() {
     });
   }, [accessToken, claims?.sub, claims?.tenantId]);
 
-  // Deep-link auto handoff
+  // Deep-link auto handoff opens in new tab if next param is provided
   useEffect(() => {
     if (!next || !platforms) return;
     const target = platforms.find((p) => p.code === next);
-    if (target?.launchAllowed) window.location.assign(target.baseUrl);
+    if (target?.launchAllowed) window.open(target.baseUrl, "_blank", "noopener,noreferrer");
   }, [next, platforms]);
 
   const categories = useMemo(
@@ -228,7 +238,7 @@ function WizardPageInner() {
       "ALL",
       "CONTROL CENTERS",
       "FAVORITES",
-      ...Array.from(new Set((platforms ?? []).map((platform) => platform.category))),
+      ...Array.from(new Set((platforms ?? []).map((platform) => platform.category))).filter(Boolean),
     ],
     [platforms],
   );
@@ -317,111 +327,49 @@ function WizardPageInner() {
   const nextMissing = !!next && platforms !== null && !nextTarget;
   const nextBlocked = !!nextTarget && !nextTarget.launchAllowed;
   const launchableCount = platforms?.filter((platform) => platform.launchAllowed).length ?? 0;
+  const totalPlatformsCount = platforms?.length ?? 9;
   const isLoading = status === "loading" || (status === "authenticated" && platforms === null && !fetchError);
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--color-bg)" }}>
-      {/* Top Universal Navbar */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          height: "56px",
-          padding: "0 var(--space-6)",
-          background: "var(--color-bg-elevated)",
-          borderBottom: "1px solid var(--color-border)",
-          position: "sticky",
-          top: 0,
-          zIndex: 40,
-        }}
-      >
-        {/* Brand Mark + Platform Title */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <BrandMark size="sm" />
-          <div style={{ width: "1px", height: "20px", background: "var(--color-border)" }} />
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "var(--color-text)", letterSpacing: "-0.02em" }}>
-              Workspace Atlas
-            </span>
-            <span
-              style={{
-                fontSize: "0.68rem",
-                fontWeight: 700,
-                padding: "2px 7px",
-                borderRadius: "999px",
-                background: "rgba(72, 197, 206, 0.12)",
-                color: "var(--color-primary)",
-                border: "1px solid rgba(72, 197, 206, 0.3)",
-              }}
-            >
-              Port 4000
-            </span>
-          </div>
+    <div className={styles.pageContainer}>
+      {/* Top Universal Minimal Navbar */}
+      <header className={styles.topNavbar}>
+        {/* Brand Group */}
+        <div className={styles.brandGroup}>
+          <div className={styles.brandBadge}>U</div>
+          <span className={styles.brandName}>UniERP</span>
+          <div className={styles.navDivider} />
+          <span className={styles.navTitle}>Workspace Atlas</span>
+          <span className={styles.portBadge}>:4000</span>
         </div>
 
-        {/* Header Right Actions: Quick Search, Guided Setup, Theme Toggle, Profile */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {/* Quick Spotlight Shortcut button */}
+        {/* Header Right Actions */}
+        <div className={styles.navActions}>
+          {/* Quick Spotlight Shortcut */}
           <button
             type="button"
             onClick={() => setCommandPaletteOpen(true)}
-            aria-label="Spotlight Search"
-            title="Press Cmd+K or Ctrl+K to search"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "5px 10px",
-              borderRadius: "var(--radius-md, 8px)",
-              background: "var(--color-bg-sunken)",
-              border: "1px solid var(--color-border)",
-              color: "var(--color-text-secondary)",
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            className={styles.searchNavBtn}
+            aria-label="Spotlight Search (Cmd+K)"
           >
-            <Command size={13} />
             <span>Search</span>
-            <kbd style={{ fontSize: "0.7rem", padding: "0 4px", border: "1px solid var(--color-border)", borderRadius: "3px" }}>K</kbd>
+            <span style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>⌘K</span>
           </button>
 
-          {/* Guided Setup Switcher */}
+          {/* Guided Setup Switcher Button */}
           <button
             type="button"
             onClick={() => setOnboardingActive(!onboardingActive)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "6px 14px",
-              borderRadius: "var(--radius-md, 8px)",
-              background: onboardingActive ? "var(--color-bg-sunken)" : "linear-gradient(135deg, #0d7377, #48c5ce)",
-              border: onboardingActive ? "1px solid var(--color-border)" : "none",
-              color: onboardingActive ? "var(--color-text)" : "#14171a",
-              fontSize: "0.78rem",
-              fontWeight: 800,
-              cursor: "pointer",
-              boxShadow: onboardingActive ? "none" : "0 2px 10px rgba(72, 197, 206, 0.35)",
-              transition: "all 0.2s ease",
-            }}
+            className={styles.guidedSetupBtn}
           >
-            {onboardingActive ? (
-              <>
-                <LayoutGrid size={13} /> Platform Grid
-              </>
-            ) : (
-              <>
-                <Sparkles size={13} /> Guided Setup
-              </>
-            )}
+            <Sparkles size={13} fill="currentColor" />
+            <span>{onboardingActive ? "Platform Grid" : "Guided Setup"}</span>
           </button>
 
-          {/* Night Mode Toggle */}
+          {/* Night/Day Mode Toggle */}
           <ThemeToggle />
 
-          {/* User Profile Avatar with Account Center Menu */}
+          {/* User Profile Avatar */}
           <UserProfileMenu
             user={
               claims
@@ -449,87 +397,107 @@ function WizardPageInner() {
           />
         ) : (
           <>
-            {/* Compact Header Section */}
-            <header className={styles.atlasHeader}>
-              <div>
+            {/* Hero & Atlas Section Layout */}
+            <section className={styles.atlasHeroLayout}>
+              {/* Left Column: Eyebrow, Title, Subtitle, and Embedded Search */}
+              <div className={styles.heroLeft}>
                 <span className={styles.eyebrow}>
-                  <Sparkles size={13} /> Workspace atlas
+                  — WORKSPACE ATLAS
                 </span>
                 <h1 className={styles.title}>Where do you want to work?</h1>
                 <p aria-live="polite" className={styles.lede}>
                   {platforms === null
                     ? "Evaluating entitled platforms for your profile…"
-                    : `${launchableCount} of ${platforms.length} enterprise platforms ready to launch.`}
+                    : `${launchableCount} of ${totalPlatformsCount} enterprise platforms ready to launch.`}
                 </p>
-              </div>
 
-              {/* Status Metric Plate */}
-              <div className={styles.statusPlate} aria-label="Platform access summary">
-                <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
-                  <span className={styles.statusNumber}>{launchableCount}</span>
-                  <span className={styles.statusLabel}>Launchable Platforms</span>
+                {/* Embedded Search Input */}
+                <div className={styles.searchBarEmbedded}>
+                  <Search size={15} aria-hidden="true" style={{ color: "var(--color-text-muted, #94a3b8)", flexShrink: 0 }} />
+                  <input
+                    ref={searchInputRef}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search by platform or module — Finance, IAM, SDK..."
+                    aria-label="Search platforms or modules"
+                  />
+                  <kbd className={styles.searchKbd} title="Press / to search" aria-hidden="true">/</kbd>
                 </div>
-                <div className={styles.statusRule} />
-                <span className={styles.statusMeta}>
-                  {(platforms?.length ?? 0) - launchableCount === 0
-                    ? "All platforms active & entitled"
-                    : `${(platforms?.length ?? 0) - launchableCount} restricted or under maintenance`}
-                </span>
+
+                {(nextMissing || nextBlocked) && (
+                  <p role="status" style={{ margin: "16px 0 0", padding: "10px 14px", borderRadius: "8px", background: "rgba(239, 68, 68, 0.1)", color: "var(--color-danger, #ef4444)", fontSize: "0.82rem", border: "1px solid rgba(239, 68, 68, 0.2)" }}>
+                    <AlertTriangle size={14} style={{ verticalAlign: "middle", marginRight: "6px" }} />
+                    <strong>{next}</strong> {nextBlocked ? "cannot be launched right now" : "is not entitled for your session"}. Select another platform below.
+                  </p>
+                )}
               </div>
 
-              {(nextMissing || nextBlocked) && (
-                <p role="status" className={styles.notice}>
-                  <AlertTriangle size={15} style={{ verticalAlign: "middle", marginRight: "6px" }} />
-                  <strong>{next}</strong> {nextBlocked ? "cannot be launched right now" : "is not entitled for your session"}. Select another platform below.
-                </p>
-              )}
-            </header>
-
-            {/* Filter & Search Bar */}
-            <section className={styles.controls} aria-label="Filter platforms">
-              <label className={styles.search}>
-                <span className="sr-only">Search platforms</span>
-                <Search size={16} aria-hidden="true" />
-                <input
-                  ref={searchInputRef}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search by platform, module (e.g. Finance, CRM, IAM), or code..."
-                  aria-keyshortcuts="/"
-                />
-                <kbd className={styles.searchKbd} title="Press / to search" aria-hidden="true">/</kbd>
-              </label>
-
-              <div className={styles.categories} aria-label="Platform categories">
-                {categories.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    aria-pressed={category === item}
-                    onClick={() => setCategory(item)}
-                  >
-                    <span>{item === "ALL" ? "All Platforms" : item.toLowerCase()}</span>
-                    {categoryCounts[item] !== undefined && (
-                      <span className={styles.categoryCount}>{categoryCounts[item]}</span>
-                    )}
-                  </button>
-                ))}
+              {/* Right Column: Atlas Index Card */}
+              <div className={styles.atlasIndexCard} aria-label="Atlas Index Summary">
+                <div className={styles.atlasIndexHeader}>
+                  <span className={styles.atlasIndexTitle}>ATLAS INDEX</span>
+                  <span className={styles.atlasIndexStatus}>
+                    {launchableCount}/{totalPlatformsCount} active
+                  </span>
+                </div>
+                <div className={styles.atlasIndexList}>
+                  {ATLAS_INDEX_ITEMS.map((item) => (
+                    <div key={item.code} className={styles.atlasIndexRow}>
+                      <span className={styles.atlasIndexCode}>{item.code}</span>
+                      <span className={styles.atlasIndexAudience}>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
+            {/* Underline Tab Navigation */}
+            <nav className={styles.tabNavSection} aria-label="Platform Categories">
+              <div className={styles.underlineTabBar}>
+                {categories.map((item) => {
+                  const isActive = category === item;
+                  const label =
+                    item === "ALL"
+                      ? "All Platforms"
+                      : item === "CONTROL CENTERS"
+                        ? "Control Centers"
+                        : item === "FAVORITES"
+                          ? "Favorites"
+                          : item.charAt(0).toUpperCase() + item.slice(1).toLowerCase();
+
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`${styles.tabButton} ${isActive ? styles.tabButtonActive : ""}`}
+                      onClick={() => setCategory(item)}
+                      aria-pressed={isActive}
+                    >
+                      <span>{label}</span>
+                      {categoryCounts[item] !== undefined && (
+                        <span className={styles.tabCount}>{categoryCounts[item]}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+
             {/* Status Message */}
-            <p className={styles.preferenceStatus} role="status" aria-live="polite">
-              {preferenceStatus}
-            </p>
+            {preferenceStatus && (
+              <p className={styles.preferenceStatus} role="status" aria-live="polite">
+                {preferenceStatus}
+              </p>
+            )}
 
             {/* Modern Platform Cards Grid */}
             {isLoading ? (
               <div className={styles.modernGrid} aria-busy="true">
-                {Array.from({ length: 6 }).map((_, i) => (
+                {Array.from({ length: 8 }).map((_, i) => (
                   <div
                     key={i}
                     style={{
-                      height: "230px",
+                      height: "245px",
                       borderRadius: "16px",
                       background: "var(--color-bg-elevated)",
                       border: "1px solid var(--color-border)",
@@ -552,8 +520,8 @@ function WizardPageInner() {
                   style={{
                     padding: "8px 16px",
                     borderRadius: "8px",
-                    background: "var(--color-primary)",
-                    color: "#ffffff",
+                    background: "var(--color-text, #111827)",
+                    color: "var(--color-bg, #ffffff)",
                     border: "none",
                     fontWeight: 700,
                     cursor: "pointer",

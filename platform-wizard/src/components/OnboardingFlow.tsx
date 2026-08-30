@@ -477,6 +477,8 @@ export function OnboardingFlow({
             >
               <a
                 href="http://localhost:3000"
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{
                   padding: "1.5rem",
                   borderRadius: "16px",
@@ -508,6 +510,8 @@ export function OnboardingFlow({
 
               <a
                 href="http://localhost:3002"
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{
                   padding: "1.5rem",
                   borderRadius: "16px",
@@ -538,6 +542,8 @@ export function OnboardingFlow({
 
               <a
                 href="http://localhost:3004"
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{
                   padding: "1.5rem",
                   borderRadius: "16px",
@@ -580,7 +586,7 @@ export function OnboardingFlow({
                   teamInvites: invites,
                 });
                 if (onFinish) onFinish();
-                else window.location.assign("http://localhost:3000");
+                else window.open("http://localhost:3000", "_blank", "noopener,noreferrer");
               }}
               style={{
                 display: "inline-flex",

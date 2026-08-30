@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUpRight, Star, AlertCircle, ShieldAlert } from "lucide-react";
+import { ArrowUpRight, Star, ShieldAlert } from "lucide-react";
 import { PLATFORM_META } from "@/lib/platform-meta";
 
 export interface ModernPlatformCardProps {
@@ -26,20 +26,37 @@ export function ModernPlatformCard({
   disabled = false,
   reason,
   favorite = false,
-  surfaceType,
   onFavoriteChange,
   onLaunch,
 }: ModernPlatformCardProps) {
   const [hovered, setHovered] = useState(false);
   const meta = PLATFORM_META[code];
   const Icon = meta?.icon;
-  const accent = meta?.accent || "var(--color-primary, #48c5ce)";
-  const accentDark = meta?.accentDark || accent;
+  const accent = meta?.accent || "#48c5ce";
   const subModules = meta?.subModules || [];
   const defaultPort = meta?.defaultPort || "";
   const badgeLabel = meta?.badgeLabel || code;
 
+  // Max tags to show before +N badge
+  const MAX_VISIBLE_TAGS = 2;
+  const visibleTags = subModules.slice(0, MAX_VISIBLE_TAGS);
+  const overflowCount = subModules.length - MAX_VISIBLE_TAGS;
+
   const handleCardClick = (e: React.MouseEvent) => {
+    if (disabled) {
+      e.preventDefault();
+      return;
+    }
+    // Prevent double triggering if clicked directly on an anchor or button inside
+    const target = e.target as HTMLElement;
+    if (target.closest("button") || target.closest("a")) {
+      return;
+    }
+    onLaunch?.();
+    window.open(href, "_blank", "noopener,noreferrer");
+  };
+
+  const handleLaunchClick = (e: React.MouseEvent) => {
     if (disabled) {
       e.preventDefault();
       return;
@@ -51,133 +68,131 @@ export function ModernPlatformCard({
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={handleCardClick}
+      role="article"
+      aria-label={`${name} Platform Card`}
       style={{
         position: "relative",
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        borderRadius: "var(--radius-xl, 16px)",
+        borderRadius: "16px",
         background: "var(--color-bg-elevated)",
-        border: `1px solid ${hovered && !disabled ? accent : "var(--color-border)"}`,
+        border: `1px solid ${hovered && !disabled ? "var(--color-text-secondary, #94a3b8)" : "var(--color-border)"}`,
         boxShadow: hovered && !disabled
-          ? `0 16px 32px -8px color-mix(in srgb, ${accent} 25%, transparent), 0 4px 12px rgba(0, 0, 0, 0.05)`
-          : "0 2px 8px rgba(0, 0, 0, 0.04)",
-        padding: "var(--space-5, 20px)",
-        minHeight: "230px",
-        transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
-        transform: hovered && !disabled ? "translateY(-4px)" : "translateY(0)",
-        opacity: disabled ? 0.72 : 1,
+          ? "0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 4px 10px -2px rgba(0, 0, 0, 0.04)"
+          : "0 1px 3px rgba(0, 0, 0, 0.02)",
+        padding: "20px",
+        minHeight: "245px",
+        transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+        transform: hovered && !disabled ? "translateY(-3px)" : "translateY(0)",
+        opacity: disabled ? 0.65 : 1,
         cursor: disabled ? "not-allowed" : "pointer",
         overflow: "hidden",
       }}
-      onClick={handleCardClick}
     >
-      {/* Top Accent Gradient Line */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: "3px",
-          background: disabled
-            ? "var(--color-border)"
-            : hovered
-              ? `linear-gradient(90deg, ${accent}, var(--color-primary, #48c5ce))`
-              : "transparent",
-          transition: "all 0.25s ease",
-        }}
-      />
-
-      {/* Card Header: Icon Well + Badges */}
+      {/* Top Header: Soft Tinted Icon Badge + Port/Status Indicator */}
       <div>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px", marginBottom: "14px" }}>
-          {/* Glowing Icon Well */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "14px",
+          }}
+        >
+          {/* Pastel Icon Well */}
           <div
             style={{
-              width: "46px",
-              height: "46px",
-              borderRadius: "var(--radius-lg, 12px)",
-              background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 20%, transparent), color-mix(in srgb, ${accent} 6%, transparent))`,
-              border: `1px solid color-mix(in srgb, ${accent} 35%, transparent)`,
+              width: "38px",
+              height: "38px",
+              borderRadius: "10px",
+              background: `color-mix(in srgb, ${accent} 14%, transparent)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: accent,
-              boxShadow: hovered && !disabled ? `0 4px 14px color-mix(in srgb, ${accent} 30%, transparent)` : "none",
-              transition: "all 0.25s ease",
               flexShrink: 0,
             }}
           >
-            {Icon ? <Icon size={23} strokeWidth={2} /> : null}
+            {Icon ? <Icon size={19} strokeWidth={2.2} /> : null}
           </div>
 
-          {/* Platform Tag & Status */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "5px" }}>
-            <span
+          {/* Port / Client Status Pill */}
+          {!disabled ? (
+            <div
               style={{
-                fontSize: "0.72rem",
-                fontWeight: 700,
-                letterSpacing: "0.03em",
-                padding: "3px 9px",
-                borderRadius: "999px",
-                background: disabled
-                  ? "rgba(239, 68, 68, 0.12)"
-                  : "var(--color-bg-sunken)",
-                color: disabled ? "var(--color-danger, #ef4444)" : "var(--color-text-secondary)",
-                border: `1px solid ${disabled ? "rgba(239, 68, 68, 0.3)" : "var(--color-border)"}`,
-                whiteSpace: "nowrap",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                fontSize: "0.74rem",
+                fontWeight: 600,
+                color: "var(--color-text-secondary)",
+                fontFamily: "var(--font-mono, monospace)",
               }}
             >
-              {disabled ? (reason || "Restricted") : badgeLabel}
-            </span>
-
-            {/* Live Port / Status Indicator */}
-            {!disabled && (
               <span
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "5px",
-                  fontSize: "0.7rem",
-                  fontWeight: 600,
-                  color: "#10b981",
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  background: "#10b981",
                 }}
-              >
-                <span
-                  style={{
-                    width: "6px",
-                    height: "6px",
-                    borderRadius: "50%",
-                    background: "#10b981",
-                    boxShadow: "0 0 6px #10b981",
-                  }}
-                />
-                {typeof defaultPort === "number" ? `:${defaultPort}` : defaultPort}
-              </span>
-            )}
-          </div>
+              />
+              <span>{typeof defaultPort === "number" ? `:${defaultPort}` : defaultPort}</span>
+            </div>
+          ) : (
+            <span
+              style={{
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                padding: "2px 7px",
+                borderRadius: "999px",
+                background: "rgba(239, 68, 68, 0.1)",
+                color: "var(--color-danger, #ef4444)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+              }}
+            >
+              {reason || "Restricted"}
+            </span>
+          )}
         </div>
 
-        {/* Platform Title & Description */}
+        {/* Code / Category Eyebrow */}
+        <div
+          style={{
+            fontSize: "0.68rem",
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: "var(--color-text-muted, #64748b)",
+            marginBottom: "4px",
+          }}
+        >
+          {badgeLabel}
+        </div>
+
+        {/* Platform Title */}
         <h3
           style={{
             margin: "0 0 6px",
-            fontSize: "1.08rem",
+            fontSize: "1.02rem",
             fontWeight: 700,
             color: "var(--color-text)",
-            letterSpacing: "-0.02em",
+            letterSpacing: "-0.015em",
             lineHeight: 1.25,
           }}
         >
           {name}
         </h3>
+
+        {/* Platform Description */}
         <p
           style={{
             margin: 0,
             fontSize: "0.82rem",
             color: "var(--color-text-secondary)",
-            lineHeight: 1.45,
+            lineHeight: 1.4,
             display: "-webkit-box",
             WebkitLineClamp: 2,
             WebkitBoxOrient: "vertical",
@@ -187,37 +202,54 @@ export function ModernPlatformCard({
           {description || meta?.description}
         </p>
 
-        {/* Feature Pills (Sub-Modules) */}
+        {/* Feature Sub-Module Pills */}
         {subModules.length > 0 && !disabled && (
           <div
             style={{
               display: "flex",
               flexWrap: "wrap",
+              alignItems: "center",
               gap: "5px",
               marginTop: "12px",
             }}
           >
-            {subModules.slice(0, 4).map((mod) => (
+            {visibleTags.map((mod) => (
               <span
                 key={mod}
                 style={{
-                  fontSize: "0.68rem",
-                  fontWeight: 600,
+                  fontSize: "0.7rem",
+                  fontWeight: 500,
                   padding: "2px 7px",
                   borderRadius: "6px",
                   background: "var(--color-bg-sunken)",
                   color: "var(--color-text-secondary)",
                   border: "1px solid var(--color-border)",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {mod}
               </span>
             ))}
+            {overflowCount > 0 && (
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  fontWeight: 600,
+                  padding: "2px 6px",
+                  borderRadius: "6px",
+                  background: "var(--color-bg-sunken)",
+                  color: "var(--color-text-muted, #64748b)",
+                  border: "1px solid var(--color-border)",
+                }}
+              >
+                +{overflowCount}
+              </span>
+            )}
           </div>
         )}
       </div>
 
-      {/* Bottom Action Footer */}
+      {/* Bottom Action Row: Favorite Bookmark + Launch ↗ Button */}
       <div
         style={{
           display: "flex",
@@ -225,10 +257,9 @@ export function ModernPlatformCard({
           justifyContent: "space-between",
           marginTop: "16px",
           paddingTop: "12px",
-          borderTop: "1px solid var(--color-border)",
         }}
       >
-        {/* Favorite Button */}
+        {/* Favorite Bookmark Button */}
         <button
           type="button"
           onClick={(e) => {
@@ -246,45 +277,43 @@ export function ModernPlatformCard({
             justifyContent: "center",
             width: "30px",
             height: "30px",
-            borderRadius: "var(--radius-md, 8px)",
-            background: favorite ? "rgba(245, 158, 11, 0.15)" : "transparent",
-            border: `1px solid ${favorite ? "rgba(245, 158, 11, 0.4)" : "var(--color-border)"}`,
-            color: favorite ? "#f59e0b" : "var(--color-text-secondary)",
+            borderRadius: "8px",
+            background: favorite ? "rgba(245, 158, 11, 0.12)" : "transparent",
+            border: `1px solid ${favorite ? "rgba(245, 158, 11, 0.35)" : "var(--color-border)"}`,
+            color: favorite ? "#f59e0b" : "var(--color-text-muted, #94a3b8)",
             cursor: disabled ? "not-allowed" : "pointer",
             transition: "all 0.15s ease",
           }}
         >
-          <Star size={14} fill={favorite ? "#f59e0b" : "none"} strokeWidth={2} />
+          <Star size={14} fill={favorite ? "#f59e0b" : "none"} strokeWidth={1.8} />
         </button>
 
-        {/* Launch Link / Action Trigger */}
+        {/* High-Contrast Launch Button (Always opens in new tab) */}
         {!disabled ? (
           <a
             href={href}
-            onClick={handleCardClick}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleLaunchClick}
+            aria-label={`Launch ${name} in a new tab`}
+            title={`Launch ${name} in a new tab`}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: "4px",
-              padding: "5px 12px",
-              borderRadius: "var(--radius-md, 8px)",
-              background: hovered ? accent : "var(--color-bg-sunken)",
-              color: hovered ? "#ffffff" : "var(--color-text)",
+              gap: "5px",
+              padding: "6px 14px",
+              borderRadius: "8px",
+              background: "var(--color-text, #111827)",
+              color: "var(--color-bg, #ffffff)",
               fontSize: "0.78rem",
               fontWeight: 700,
               textDecoration: "none",
-              transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
-              border: `1px solid ${hovered ? accent : "var(--color-border)"}`,
+              transition: "opacity 0.15s ease, transform 0.15s ease",
+              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
             }}
           >
             <span>Launch</span>
-            <ArrowUpRight
-              size={14}
-              style={{
-                transform: hovered ? "translate(2px, -2px)" : "translate(0, 0)",
-                transition: "transform 0.2s ease",
-              }}
-            />
+            <ArrowUpRight size={13} strokeWidth={2.5} />
           </a>
         ) : (
           <span
@@ -292,12 +321,12 @@ export function ModernPlatformCard({
               display: "inline-flex",
               alignItems: "center",
               gap: "4px",
-              fontSize: "0.75rem",
+              fontSize: "0.74rem",
               color: "var(--color-danger, #ef4444)",
               fontWeight: 600,
             }}
           >
-            <ShieldAlert size={13} /> {reason || "Access Restricted"}
+            <ShieldAlert size={13} /> {reason || "Restricted"}
           </span>
         )}
       </div>

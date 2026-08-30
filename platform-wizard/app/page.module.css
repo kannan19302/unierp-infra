@@ -1,128 +1,202 @@
-.atlasHeader {
+/* Global Layout Container */
+.pageContainer {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg, #f8fafc);
+}
+
+/* Universal Header */
+.topNavbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 var(--space-8, 32px);
+  background: var(--color-bg-elevated, #ffffff);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(12px);
+}
+
+.brandGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brandBadge {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--color-text, #111827);
+  color: var(--color-bg, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.92rem;
+  letter-spacing: -0.03em;
+  flex-shrink: 0;
+}
+
+.brandName {
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--color-text, #111827);
+  letter-spacing: -0.03em;
+}
+
+.navDivider {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border, #e2e8f0);
+}
+
+.navTitle {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--color-text-secondary, #64748b);
+  letter-spacing: -0.01em;
+}
+
+.portBadge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--color-bg-sunken, #f1f5f9);
+  color: var(--color-text-muted, #64748b);
+  border: 1px solid var(--color-border, #e2e8f0);
+  font-family: var(--font-mono, monospace);
+}
+
+.navActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.searchNavBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--color-bg-sunken, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-secondary, #64748b);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.searchNavBtn:hover {
+  border-color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text, #111827);
+}
+
+.guidedSetupBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--color-text, #111827);
+  border: 1px solid var(--color-text, #111827);
+  color: var(--color-bg, #ffffff);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.guidedSetupBtn:hover {
+  opacity: 0.9;
+}
+
+/* Hero & Atlas Section Layout */
+.atlasHeroLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
-  gap: var(--space-6);
-  max-width: var(--content-max-width);
-  margin-inline: auto;
-  padding: 1.25rem var(--space-6) 0.75rem;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 360px);
+  gap: 40px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 2.25rem var(--space-8, 32px) 1.5rem;
+  align-items: start;
+}
+
+.heroLeft {
+  display: flex;
+  flex-direction: column;
 }
 
 .eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: var(--space-2);
-  color: var(--color-primary);
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--weight-bold, 700);
+  gap: 8px;
+  margin-bottom: 0.75rem;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.72rem;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  font-family: var(--font-mono, monospace);
 }
 
 .title {
-  max-width: 760px;
-  margin: 0;
-  color: var(--color-text);
-  font-size: clamp(1.75rem, 3.5vw, 2.65rem);
+  margin: 0 0 0.5rem;
+  color: var(--color-text, #111827);
+  font-size: clamp(2rem, 3.8vw, 2.75rem);
   font-weight: 700;
   letter-spacing: -0.04em;
-  line-height: 1.08;
+  line-height: 1.1;
 }
 
 .lede {
-  max-width: 620px;
-  margin: var(--space-2) 0 0;
-  color: var(--color-text-secondary);
+  margin: 0 0 1.5rem;
+  color: var(--color-text-secondary, #64748b);
   font-size: 0.95rem;
+  line-height: 1.5;
 }
 
-.statusPlate {
-  align-self: end;
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg, 12px);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 60%),
-    var(--color-bg-elevated);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-}
-
-.statusNumber {
-  font-size: 2.1rem;
-  font-weight: 800;
-  letter-spacing: -0.05em;
-  line-height: 1;
-  color: var(--color-text);
-}
-
-.statusLabel {
-  font-weight: var(--weight-semibold, 600);
-  font-size: 0.82rem;
-  color: var(--color-text);
-}
-
-.statusMeta {
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-}
-
-.statusRule {
-  height: 1px;
-  margin-block: var(--space-1);
-  background: var(--color-border);
-}
-
-.notice {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-warning);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-sunken);
-  color: var(--color-text);
-  font-size: var(--text-sm);
-}
-
-.controls {
+/* Embedded Search Input */
+.searchBarEmbedded {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  max-width: var(--content-max-width);
-  margin-inline: auto;
-  padding: 0 var(--space-6) var(--space-2);
-}
-
-.search {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: min(340px, 100%);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg, 10px);
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
+  gap: 10px;
+  max-width: 480px;
+  width: 100%;
+  padding: 0 14px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 12px;
+  background: var(--color-bg-elevated, #ffffff);
+  color: var(--color-text-secondary, #64748b);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.search:focus-within {
-  border-color: var(--color-primary);
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+.searchBarEmbedded:focus-within {
+  border-color: var(--color-text-secondary, #94a3b8);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
 }
 
-.search input {
+.searchBarEmbedded input {
   width: 100%;
-  height: 38px;
+  height: 40px;
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--color-text);
+  color: var(--color-text, #111827);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 0.85rem;
+}
+
+.searchBarEmbedded input::placeholder {
+  color: var(--color-text-muted, #94a3b8);
 }
 
 .searchKbd {
@@ -133,99 +207,193 @@
   height: 18px;
   padding: 0 4px;
   font-family: inherit;
-  font-size: 0.7rem;
-  font-weight: var(--weight-bold, 700);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-sunken);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 4px);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #94a3b8);
+  background: var(--color-bg-sunken, #f1f5f9);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 4px;
   pointer-events: none;
 }
 
-.categories {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  padding: 2px;
-  scrollbar-width: thin;
+/* Right Atlas Index Card */
+.atlasIndexCard {
+  background: var(--color-bg-elevated, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
-.categories button {
+.atlasIndexHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border-subtle, #f1f5f9);
+}
+
+.atlasIndexTitle {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.atlasIndexStatus {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.atlasIndexList {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.atlasIndexRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.atlasIndexCode {
+  font-weight: 600;
+  color: var(--color-text, #111827);
+  letter-spacing: -0.01em;
+}
+
+.atlasIndexAudience {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+}
+
+/* Underline Tab Navigation */
+.tabNavSection {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 var(--space-8, 32px);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.underlineTabBar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.underlineTabBar::-webkit-scrollbar {
+  display: none;
+}
+
+.tabButton {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.82rem;
+  padding: 10px 0 12px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary, #64748b);
+  font-family: inherit;
+  font-size: 0.85rem;
   font-weight: 500;
-  text-transform: capitalize;
+  cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease;
 }
 
-.categories button:hover:not([aria-pressed="true"]) {
-  border-color: var(--color-text-secondary);
-  color: var(--color-text);
+.tabButton:hover {
+  color: var(--color-text, #111827);
 }
 
-.categories button[aria-pressed="true"] {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: #ffffff;
+.tabButtonActive {
+  color: var(--color-text, #111827);
   font-weight: 700;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 35%, transparent);
 }
 
-.categoryCount {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.08);
+.tabButtonActive::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-text, #111827);
+  border-radius: 2px 2px 0 0;
 }
 
-.categories button[aria-pressed="true"] .categoryCount {
-  background: rgba(255, 255, 255, 0.28);
-  color: #ffffff;
+.tabCount {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #94a3b8);
 }
 
+.tabButtonActive .tabCount {
+  color: var(--color-text, #111827);
+  font-weight: 600;
+}
+
+/* Preference Status message */
 .preferenceStatus {
   min-height: 1.25rem;
-  max-width: var(--content-max-width);
-  margin: 0 auto;
-  padding: 0 var(--space-6);
-  color: var(--color-text-secondary);
+  max-width: 1240px;
+  margin: 4px auto 0;
+  padding: 0 var(--space-8, 32px);
+  color: var(--color-text-muted, #94a3b8);
   font-size: 0.72rem;
 }
 
 /* Modern Grid */
 .modernGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-  gap: var(--space-5, 20px);
-  max-width: var(--content-max-width);
-  margin-inline: auto;
-  padding: var(--space-3) var(--space-6) var(--space-8);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 12px var(--space-8, 32px) 48px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-@media (max-width: 760px) {
-  .atlasHeader {
-    grid-template-columns: 1fr;
-    gap: var(--space-4);
-    padding-inline: var(--space-4);
-    padding-top: 1rem;
+@media (max-width: 1100px) {
+  .modernGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .statusPlate { align-self: auto; }
-  .controls { align-items: stretch; flex-direction: column; padding-inline: var(--space-4); }
-  .search { min-width: 0; }
-  .preferenceStatus { padding-inline: var(--space-4); }
-  .modernGrid { padding-inline: var(--space-4); grid-template-columns: 1fr; }
+}
+
+@media (max-width: 860px) {
+  .atlasHeroLayout {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding-inline: 20px;
+  }
+  .tabNavSection {
+    padding-inline: 20px;
+  }
+  .modernGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-inline: 20px;
+  }
+}
+
+@media (max-width: 580px) {
+  .topNavbar {
+    padding-inline: 16px;
+  }
+  .modernGrid {
+    grid-template-columns: 1fr;
+    padding-inline: 16px;
+  }
 }
